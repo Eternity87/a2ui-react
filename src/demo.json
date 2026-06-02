@@ -1,0 +1,226 @@
+{
+  "a2ui": [
+    {
+      "beginRendering": {
+        "surfaceId": "main",
+        "catalogId": "basic"
+      }
+    },
+    {
+      "surfaceUpdate": {
+        "surfaceId": "main",
+        "components": [
+          {
+            "id": "root",
+            "component": "Row",
+            "props": {
+              "children": ["card1", "card2"],
+              "gap": 16
+            }
+          },
+          {
+            "id": "card1",
+            "component": "Card",
+            "props": {
+              "title": "产品信息",
+              "children": ["catLabel", "catSelect", "prodSelect", "priceText"]
+            }
+          },
+          {
+            "id": "catLabel",
+            "component": "Text",
+            "props": {
+              "text": "产品大类"
+            }
+          },
+          {
+            "id": "catSelect",
+            "component": "Select",
+            "props": {
+              "label": "产品大类",
+              "value": "/data/productCategory",
+              "options": "/data/categoryOptions",
+              "placeholder": "请选择产品大类"
+            }
+          },
+          {
+            "id": "prodSelect",
+            "component": "Select",
+            "props": {
+              "label": "产品",
+              "value": "/data/productId",
+              "options": "/data/productOptions",
+              "placeholder": "请先选择大类"
+            }
+          },
+          {
+            "id": "priceText",
+            "component": "Text",
+            "props": {
+              "text": "单价: {/data/unitPrice} 元/{/data/unit}"
+            }
+          },
+          {
+            "id": "card2",
+            "component": "Card",
+            "props": {
+              "title": "订单信息",
+              "children": ["qtyInput", "totalText", "submitBtn"]
+            }
+          },
+          {
+            "id": "qtyInput",
+            "component": "TextField",
+            "props": {
+              "label": "数量",
+              "value": "/data/quantity",
+              "type": "number",
+              "placeholder": "请输入数量"
+            }
+          },
+          {
+            "id": "totalText",
+            "component": "Text",
+            "props": {
+              "text": "总价: {/data/totalPrice} 元"
+            }
+          },
+          {
+            "id": "submitBtn",
+            "component": "Button",
+            "props": {
+              "label": "提交订单",
+              "variant": "primary",
+              "reactionId": "submit"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "dataModelUpdate": {
+        "surfaceId": "main",
+        "data": {
+          "categoryOptions": [
+            { "label": "电子产品", "value": "ELECTRONICS" },
+            { "label": "家具", "value": "FURNITURE" }
+          ],
+          "productCategory": "",
+          "productId": "",
+          "productOptions": [],
+          "unitPrice": 0,
+          "unit": "",
+          "quantity": 1,
+          "totalPrice": 0
+        }
+      }
+    }
+  ],
+  "logic": {
+    "reactions": [
+      {
+        "id": "loadProducts",
+        "when": { "field": "/data/productCategory", "event": "change" },
+        "then": [
+          { "type": "cascade", "target": "/data/productId", "action": "reset" },
+          { "type": "setValues", "map": { "/data/productOptions": [] } },
+          {
+            "type": "apiRequest",
+            "url": "/api/products",
+            "params": { "category": "/data/productCategory" },
+            "outputTo": "/data/rawProducts"
+          },
+          {
+            "type": "setValues",
+            "map": {
+              "/data/productOptions": {
+                "pipe": [
+                  { "get": "/data/rawProducts.list" },
+                  { "map": "({ label: $.name + ($.status === 'discontinued' ? ' (停产)' : ''), value: $.id })" }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "loadDetail",
+        "when": { "field": "/data/productId", "event": "change" },
+        "then": [
+          {
+            "type": "apiRequest",
+            "url": "/api/product-detail",
+            "params": { "id": "/data/productId" },
+            "outputTo": "/data/productDetail"
+          },
+          {
+            "type": "setValues",
+            "map": {
+              "/data/unitPrice": "/data/productDetail.price",
+              "/data/unit": "/data/productDetail.unit"
+            }
+          },
+          {
+            "type": "condition",
+            "branches": [
+              {
+                "if": "$productDetail.status === 'discontinued'",
+                "then": [
+                  { "type": "toast", "message": "该产品已停产，请重新选择", "variant": "warning" }
+                ]
+              },
+              {
+                "then": [
+                  { "type": "toast", "message": "产品信息已加载", "variant": "success" }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "calcTotal",
+        "when": { "field": "/data/quantity", "event": "change" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/data/totalPrice": {
+                "pipe": [
+                  { "get": "/data/unitPrice" },
+                  { "compute": "$value * quantity" }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "submit",
+        "when": { "field": "submitBtn", "event": "click" },
+        "then": [
+          {
+            "type": "validate",
+            "rules": [
+              { "field": "/data/productCategory", "required": true, "message": "请选择产品大类" },
+              { "field": "/data/productId", "required": true, "message": "请选择产品" },
+              { "field": "/data/quantity", "required": true, "message": "请输入数量" }
+            ]
+          },
+          {
+            "type": "apiRequest",
+            "url": "/api/orders",
+            "method": "POST",
+            "body": {
+              "productId": "/data/productId",
+              "quantity": "/data/quantity",
+              "unitPrice": "/data/unitPrice"
+            },
+            "outputTo": "/data/orderResult"
+          },
+          { "type": "toast", "message": "订单提交成功！", "variant": "success" }
+        ]
+      }
+    ]
+  }
+}
