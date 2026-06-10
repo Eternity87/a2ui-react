@@ -27,11 +27,12 @@ interface LegacyMessage {
   beginRendering?: { surfaceId: string; catalogId: string }
   surfaceUpdate?: { surfaceId: string; components: any[] }
   dataModelUpdate?: { surfaceId: string; data: Record<string, any> }
+  updateDataModel?: { surfaceId: string; path?: string; value?: any }
 }
 
 /** Google 官方 v0.9 标准消息 */
 interface V09Message {
-  version?: 'v0.9'
+  version: 'v0.9'
   createSurface?: { surfaceId: string; catalogId: string; sendDataModel?: boolean }
   updateComponents?: { surfaceId: string; components: any[] }
   updateDataModel?: { surfaceId: string; path?: string; value?: any }
@@ -95,6 +96,7 @@ export function legacyToV09(
   for (const msg of legacyMessages) {
     if (msg.beginRendering) {
       result.push({
+        version: 'v0.9' as const,
         createSurface: {
           surfaceId: msg.beginRendering.surfaceId,
           catalogId,
@@ -113,6 +115,7 @@ export function legacyToV09(
       // A2uiSurface 要求必须有 id="root" 的根组件，自动补全
       comps = ensureRootComponent(comps)
       result.push({
+        version: 'v0.9' as const,
         updateComponents: { surfaceId: msg.surfaceUpdate.surfaceId, components: comps },
       })
     }
@@ -121,13 +124,13 @@ export function legacyToV09(
       // 旧格式：整体写入到根路径
       const { surfaceId, data } = msg.dataModelUpdate
       if (data && Object.keys(data).length > 0) {
-        result.push({ updateDataModel: { surfaceId, path: '/', value: data } })
+        result.push({ version: 'v0.9' as const, updateDataModel: { surfaceId, path: '/', value: data } })
       }
     }
 
     if (msg.updateDataModel) {
       // 新标准格式：逐字段透传
-      result.push({ updateDataModel: msg.updateDataModel })
+      result.push({ version: 'v0.9' as const, updateDataModel: msg.updateDataModel })
     }
   }
 
@@ -239,7 +242,7 @@ export function extractDataFromMessages(messages: any[]): Record<string, any> {
 export function dataModelToV09Messages(surfaceId: string, data: Record<string, any>): V09Message[] {
   const msgs: V09Message[] = []
   for (const [key, value] of Object.entries(data)) {
-    msgs.push({ updateDataModel: { surfaceId, path: `/${key}`, value } })
+    msgs.push({ version: 'v0.9' as const, updateDataModel: { surfaceId, path: `/${key}`, value } })
   }
   return msgs
 }

@@ -51,7 +51,7 @@ export function createA2UIComponent<P = Record<string, any>>(
   RenderComponent: React.FC<P & A2UIComponentMeta>,
 ) {
   return createBinderlessComponentImplementation(
-    { name, label: name, schema: {} as any },
+    { name, schema: {} as any },
     ({ context, buildChild }: A2UIRenderProps) => {
       const dm = context.dataContext.dataModel
 
@@ -188,7 +188,7 @@ const ButtonImpl = createA2UIComponent<{
  * value（行数据）由 resolveProps 解析；columns 由 JSON 静态定义
  */
 const DataTableImpl = createBinderlessComponentImplementation(
-  { name: 'DataTable', label: '数据表格', schema: {} as any },
+  { name: 'DataTable', schema: {} as any },
   ({ context }: A2UIRenderProps) => {
     const dm = context.dataContext.dataModel
     const sub = useCallback((cb: () => void) => dm.subscribe('/', () => cb()).unsubscribe, [dm])

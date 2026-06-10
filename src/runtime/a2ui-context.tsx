@@ -128,7 +128,7 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
       }
     }
 
-    processor.processMessages(v09)
+    processor.processMessages(v09 as any)
     setVersion(v => v + 1)
   }, [processor, catalog.id])
 
