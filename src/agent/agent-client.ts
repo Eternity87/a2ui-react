@@ -1,7 +1,7 @@
 /**
  * Agent API 客户端
  *
- * 调用 LLM (Claude / Gemini / GPT) 生成 A2UI + Logic JSON。
+ * 调用 LLM (Gemini / DeepSeek) 生成 A2UI + Logic JSON。
  * 支持 mock 模式（无需 API Key），直接返回 demo 数据。
  */
 
@@ -19,79 +19,6 @@ export interface AgentResult {
   a2ui: any[]
   logic: { reactions: any[] }
 }
-
-// ===== Claude API (暂未启用) =====
-/*
-async function callClaude(
-  systemPrompt: string,
-  userMessage: string,
-  config: AgentConfig,
-): Promise<string> {
-  const model = config.model ?? 'claude-haiku-4-5'
-  const baseUrl = config.baseUrl ?? 'https://api.anthropic.com'
-
-  const resp = await fetch(`${baseUrl}/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': config.apiKey!,
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'output-128k-2025-02-19',
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  })
-
-  if (!resp.ok) {
-    const err = await resp.text()
-    throw new Error(`Claude API error ${resp.status}: ${err}`)
-  }
-
-  const data = await resp.json()
-  return data.content[0].text
-}
-*/
-
-// ===== OpenAI API (暂未启用) =====
-/*
-async function callOpenAI(
-  systemPrompt: string,
-  userMessage: string,
-  config: AgentConfig,
-): Promise<string> {
-  const model = config.model ?? 'gpt-4o-mini'
-  const baseUrl = config.baseUrl ?? 'https://api.openai.com'
-
-  const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 4096,
-    }),
-  })
-
-  if (!resp.ok) {
-    const err = await resp.text()
-    throw new Error(`OpenAI API error ${resp.status}: ${err}`)
-  }
-
-  const data = await resp.json()
-  return data.choices[0].message.content
-}
-*/
 
 // ===== Gemini API =====
 
@@ -169,12 +96,18 @@ async function callDeepSeek(
 // ===== 提取 JSON =====
 
 function extractJson(raw: string): any {
+  let text = raw.trim()
   // 去掉 markdown 代码块包裹
-  let cleaned = raw.trim()
-  if (cleaned.startsWith('```')) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
+  if (text.startsWith('```')) {
+    text = text.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '')
   }
-  return JSON.parse(cleaned)
+  // LLM 可能在 JSON 前后附加文字，截取第一个 { 到最后一个 } 之间的内容
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end > start) {
+    text = text.slice(start, end + 1)
+  }
+  return JSON.parse(text)
 }
 
 // ===== 校验输出 =====
@@ -194,7 +127,7 @@ function validateOutput(data: any): AgentResult {
   const firstMsg = data.a2ui[0]
   if (!firstMsg || !('beginRendering' in firstMsg)) {
     console.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
-    data.a2ui.unshift({ beginRendering: { surfaceId: 'main', catalogId: 'basic' } })
+    data.a2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...data.a2ui]
   }
 
   return { a2ui: data.a2ui, logic: data.logic }
@@ -217,12 +150,6 @@ export async function generatePage(
 
   let raw: string
   switch (config.provider) {
-    // case 'claude':
-    //   raw = await callClaude(systemPrompt, userMessage, config)
-    //   break
-    // case 'openai':
-    //   raw = await callOpenAI(systemPrompt, userMessage, config)
-    //   break
     case 'gemini':
       raw = await callGemini(systemPrompt, userMessage, config)
       break
@@ -238,7 +165,7 @@ export async function generatePage(
 }
 
 /**
- * 使用完整示例 Prompt 生成（首次使用推荐）
+ * 使用完整示例 Prompt 生成（附带格式参考示例，适合首次使用或复杂需求）
  */
 export async function generatePageWithExample(
   userRequirement: string,
@@ -253,12 +180,6 @@ export async function generatePageWithExample(
 
   let raw: string
   switch (config.provider) {
-    // case 'claude':
-    //   raw = await callClaude(systemPrompt, userMessage, config)
-    //   break
-    // case 'openai':
-    //   raw = await callOpenAI(systemPrompt, userMessage, config)
-    //   break
     case 'gemini':
       raw = await callGemini(systemPrompt, userMessage, config)
       break

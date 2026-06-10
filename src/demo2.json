@@ -11,7 +11,7 @@
         "surfaceId": "main",
         "components": [
           {
-            "id": "pageCard",
+            "id": "root",
             "component": "Card",
             "props": {
               "title": "订单列表",
@@ -31,7 +31,7 @@
             "component": "TextField",
             "props": {
               "label": "搜索",
-              "value": "/data/searchKeyword",
+              "value": { "path": "/searchKeyword" },
               "placeholder": "订单号 / 产品名"
             }
           },
@@ -57,41 +57,34 @@
                 { "key": "status", "label": "状态" },
                 { "key": "createdAt", "label": "创建时间" }
               ],
-              "value": "/data/orders",
+              "value": { "path": "/orders" },
               "emptyText": "暂无订单数据"
             }
           }
         ]
       }
     },
-    {
-      "dataModelUpdate": {
-        "surfaceId": "main",
-        "data": {
-          "searchKeyword": "",
-          "orders": []
-        }
-      }
-    }
+    { "updateDataModel": { "surfaceId": "main", "path": "/searchKeyword", "value": "" } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/orders", "value": [] } }
   ],
   "logic": {
     "reactions": [
       {
         "id": "loadOrders",
-        "when": { "field": "", "event": "init" },
+        "when": { "field": "/_", "event": "init" },
         "then": [
           {
             "type": "apiRequest",
             "url": "/api/orders",
             "method": "GET",
-            "outputTo": "/data/rawOrders"
+            "outputTo": "/rawOrders"
           },
           {
             "type": "setValues",
             "map": {
-              "/data/orders": {
+              "/orders": {
                 "pipe": [
-                  { "get": "/data/rawOrders.list" }
+                  { "get": "/rawOrders.list" }
                 ]
               }
             }
@@ -107,16 +100,16 @@
             "url": "/api/orders",
             "method": "GET",
             "params": {
-              "keyword": "/data/searchKeyword"
+              "keyword": "/searchKeyword"
             },
-            "outputTo": "/data/rawOrders"
+            "outputTo": "/rawOrders"
           },
           {
             "type": "setValues",
             "map": {
-              "/data/orders": {
+              "/orders": {
                 "pipe": [
-                  { "get": "/data/rawOrders.list" }
+                  { "get": "/rawOrders.list" }
                 ]
               }
             }

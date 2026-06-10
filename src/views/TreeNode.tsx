@@ -1,8 +1,21 @@
-import React from 'react'
+/**
+ * TreeNode.tsx — 递归组件树节点
+ *
+ * 【在调试器中的角色】
+ * DOM 树面板的每个节点。通过组件自引用实现递归渲染，
+ * 支持展开/折叠、选中高亮、拖拽定位指示器。
+ *
+ * 【DataTable 列的虚拟节点】
+ * DataTable 的 columns 不是独立的 A2UI 组件，但调试器需要编辑它们。
+ * 所以为每列生成虚拟节点（virtualId: `tableId$col$0`），
+ * 在树中展示为 `.tree-row-col` 样式，右栏编辑其属性。
+ */
+
+import { canHaveChildren } from '@/runtime/a2ui-utils'
 
 interface TreeNodeProps {
   nodeId: string
-  components: any[]
+  compMap: Map<string, any>
   selectedId: string | null
   collapsedIds: Set<string>
   depth: number
@@ -17,15 +30,9 @@ interface TreeNodeProps {
 }
 
 export function TreeNode({
-  nodeId, components, selectedId, collapsedIds, depth, dropIndicator,
+  nodeId, compMap, selectedId, collapsedIds, depth, dropIndicator,
   onSelect, onToggleCollapse, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
 }: TreeNodeProps) {
-  const compMap = React.useMemo(() => {
-    const m = new Map<string, any>()
-    components.forEach(c => m.set(c.id, c))
-    return m
-  }, [components])
-
   const node = compMap.get(nodeId)
   if (!node) return null
 
@@ -44,7 +51,7 @@ export function TreeNode({
       }))
     : []
 
-  const canHaveChildren = ['Row', 'Card'].includes(node.component)
+  const isContainer = canHaveChildren(node.component)
   const hasExpandable = realChildren.length > 0 || colVirtualChildren.length > 0
   const isCollapsed = collapsedIds.has(nodeId)
   const isSelected = nodeId === selectedId
@@ -62,15 +69,16 @@ export function TreeNode({
         onDragLeave={onDragLeave}
         onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, nodeId) }}
       >
-        {dropIndicator?.targetId === nodeId && dropIndicator?.position === 'before' && (
-          <div className="drop-indicator" />
-        )}
-        {dropIndicator?.targetId === nodeId && dropIndicator?.position === 'inside' && (
-          <div className="drop-indicator-inside" />
+        {dropIndicator?.targetId === nodeId && (
+          <>
+            {dropIndicator.position === 'before' && <div className="drop-line drop-line-before" />}
+            {dropIndicator.position === 'after' && <div className="drop-line drop-line-after" />}
+            {dropIndicator.position === 'inside' && <div className="drop-highlight" />}
+          </>
         )}
 
         <span
-          className={`tree-toggle ${(!canHaveChildren && !isDataTable) || !hasExpandable ? 'invisible' : ''}`}
+          className={`tree-toggle ${(!isContainer && !isDataTable) || !hasExpandable ? 'invisible' : ''}`}
           onClick={e => { e.stopPropagation(); onToggleCollapse(nodeId) }}
         >
           {isCollapsed ? '▶' : '▼'}
@@ -86,7 +94,7 @@ export function TreeNode({
             <TreeNode
               key={child.id}
               nodeId={child.id}
-              components={components}
+              compMap={compMap}
               selectedId={selectedId}
               collapsedIds={collapsedIds}
               depth={depth + 1}

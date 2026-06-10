@@ -53,7 +53,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
     },
     props: {
       label: { type: 'string', required: true, description: '标签' },
-      value: { type: 'string', required: true, description: '绑定的 JSON Pointer 路径' },
+      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态字符串' },
       placeholder: { type: 'string', description: '占位提示文字' },
       type: {
         type: 'string',
@@ -76,17 +76,17 @@ export const componentCatalog: Record<string, ComponentDef> = {
     },
     props: {
       label: { type: 'string', required: true, description: '标签' },
-      value: { type: 'string', required: true, description: '绑定的 JSON Pointer 路径' },
-      options: { type: 'string', description: '选项列表的 JSON Pointer 路径' },
+      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态值' },
+      options: { type: 'DynamicValue', description: '选项列表，支持 DataBinding { path } 或静态数组 [{ label, value }]' },
       placeholder: { type: 'string', description: '占位提示' },
     },
   },
   Text: {
     type: 'Text',
-    description: '文本展示，支持 {/data/xxx} 模板插值',
+    description: '文本展示，支持 ${/xxx} 模板插值（ExpressionParser）',
     category: 'display',
     props: {
-      text: { type: 'string', required: true, description: '展示文本，支持模板 {/data/xxx} 引用数据' },
+      text: { type: 'DynamicString', required: true, description: '展示文本，支持 ${/xxx} 模板插值引用数据' },
     },
   },
   Button: {
@@ -118,7 +118,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
     category: 'display',
     props: {
       columns: { type: 'array', required: true, description: '列定义数组 [{ key, label, cellType?, cellProps? }]。cellType 可选: text(默认)/input/number/select，cellProps 透传给底层组件' },
-      value: { type: 'string', required: true, description: '行数据数组的 JSON Pointer 路径，如 /data/orders' },
+      value: { type: 'DynamicValue', required: true, description: '行数据数组的 DataBinding 路径，如 { "path": "/orders" }' },
       emptyText: { type: 'string', defaultValue: '暂无数据', description: '无数据时展示的提示文字' },
     },
   },

@@ -1,19 +1,37 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { A2UIRenderer } from '@/runtime/a2ui-renderer'
-import { DataModelStore, ReactionEngine } from '@/runtime/reaction-engine'
+/**
+ * App.tsx — 应用入口
+ *
+ * 【两种模式】均使用官方 @a2ui 渲染管线
+ * - 页面调试器 (debugger): 三栏布局，编辑组件树 → syncToSurface → A2uiSurface 渲染
+ * - 渲染预览 (preview):   Agent 控制面板 + A2uiSurface 渲染
+ *
+ * 【统一数据流】
+ * Agent/JSON → a2ui.load() → MessageProcessor → SurfaceModel → A2uiSurface
+ *                                                    ↓
+ *                           ReactionEngine ← DataModel(Signals)
+ *                                                    ↓
+ *                      组件通过 useSyncExternalStore 订阅变更 → 自动重渲染
+ */
+
+import { useState, useRef, useEffect, useCallback, Component } from 'react'
+import { ReactionEngine } from '@/runtime/reaction-engine'
 import { PipeEngine } from '@/runtime/pipe-engine'
 import { createMockApiExecutor } from '@/mock/api'
+import { A2UIProvider, useA2UI } from '@/runtime/a2ui-context'
+import { createA2UICatalog } from '@/runtime/a2ui-catalog'
+import { A2uiSurface } from '@a2ui/react/v0_9'
 import { Debugger } from '@/views/Debugger'
 import { generatePage, generatePageWithExample, type AgentConfig } from '@/agent/agent-client'
 import demoData from '@/demo.json'
+import { Toast } from '@/components/Toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 
 const defaultKeys: Record<string, string> = {
-  gemini: 'AIzaSyAbbmvC-NFN125RGv4Nba3bQoSRl1Cbcso',
-  deepseek: 'sk-15f45580bc7f4adb9350013902f88ccd',
+  gemini: import.meta.env.VITE_GEMINI_API_KEY ?? '',
+  deepseek: import.meta.env.VITE_DEEPSEEK_API_KEY ?? '',
 }
 
 export default function App() {
@@ -36,18 +54,24 @@ export default function App() {
         </button>
       </div>
 
-      {mode === 'debugger' ? <Debugger /> : <Preview />}
+      {mode === 'debugger' ? (
+        <A2UIProvider catalog={catalog}>
+          <Debugger />
+        </A2UIProvider>
+      ) : (
+        <Preview />
+      )}
     </div>
   )
 }
 
-function Preview() {
-  const storeRef = useRef<DataModelStore>(new DataModelStore({}))
+/** 预览模式内部组件（在 A2UIProvider 内） */
+function PreviewInner() {
+  const a2ui = useA2UI()
   const engineRef = useRef<ReactionEngine | null>(null)
+  const pipeEngineRef = useRef(new PipeEngine({}))
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [renderKey, setRenderKey] = useState(0)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
-  const [components, setComponents] = useState<any[]>([])
   const [reactions, setReactions] = useState<any[]>([])
 
   // Agent state
@@ -60,53 +84,57 @@ function Preview() {
   const [showConfig, setShowConfig] = useState(true)
 
   function initFromData(data: any) {
-    const store = storeRef.current
-    const su = data.a2ui?.find((m: any) => 'surfaceUpdate' in m)
-    const comps = su?.surfaceUpdate?.components ?? []
     const dm = data.a2ui?.find((m: any) => 'dataModelUpdate' in m)
     const reacts = data.logic?.reactions ?? []
 
-    store.replaceAll(dm?.dataModelUpdate?.data ?? {})
-    setComponents(comps)
+    // Load A2UI messages (creates surface synchronously)
+    a2ui.load(data.a2ui)
+
     setReactions(reacts)
+  }
+
+  // 初始加载：默认展示 demo.json
+  useEffect(() => {
+    initFromData(demoData)
+  }, [])
+
+  // 保持最新 surface 引用，供 onAction 回调使用（避免闭包过期）
+  const surfaceRef = useRef(a2ui.surface)
+  surfaceRef.current = a2ui.surface
+
+  // surface 就绪后创建 Reaction 引擎（init 事件在此触发）
+  useEffect(() => {
+    const surface = a2ui.surface
+    if (!surface || reactions.length === 0) return
 
     engineRef.current?.destroy()
-    const engine = new ReactionEngine(store, reacts, {
+    pipeEngineRef.current.updateDataModel(surface.dataModel.get('/') ?? {})
+
+    const engine = new ReactionEngine(surface.dataModel, reactions, {
       apiExecutor: createMockApiExecutor(),
-      pipeEngine: new PipeEngine(store.proxy),
+      pipeEngine: pipeEngineRef.current,
       toast: (msg, type = 'info') => setToast({ msg, type }),
     })
     engine.boot()
     engineRef.current = engine
-    setRenderKey(k => k + 1)
-  }
 
-  // 初始加载 demo
+    return () => engine.destroy()
+  }, [a2ui.surface, reactions])
+
+  // Wire click actions → ReactionEngine
   useEffect(() => {
-    initFromData(demoData)
-    const unsub = storeRef.current.subscribeAll(() => setRenderKey(k => k + 1))
-    return () => { unsub(); engineRef.current?.destroy() }
-  }, [])
-
-  const handleEvent = useCallback((event: string, payload: any) => {
-    if (event === 'change' && payload.field) {
-      storeRef.current.set(payload.field, payload.value)
-      setRenderKey(k => k + 1)
-    }
-    if (event === 'click' && payload.reactionId) {
-      engineRef.current?.triggerReaction(payload.reactionId)
-      setTimeout(() => setRenderKey(k => k + 1), 100)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (toast) { const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t) }
-  }, [toast])
+    const surface = surfaceRef.current
+    if (!surface) return
+    return a2ui.onAction((action: any) => {
+      if (action.name === 'a2ui.click' && action.context?.reactionId) {
+        engineRef.current?.triggerReaction(action.context.reactionId)
+      }
+    })
+  }, [a2ui.surface])
 
   // Agent 生成
   async function doGenerate() {
     if (!requirement.trim() && provider === 'mock') {
-      // mock mode uses demo data directly
       initFromData(demoData)
       return
     }
@@ -151,17 +179,11 @@ function Preview() {
     e.target.value = ''
   }
 
-  const dataModel = storeRef.current.getRaw()
-
   return (
     <div className="flex-1 flex overflow-hidden">
-      {toast && (
-        <div className={`fixed top-5 right-5 px-4 py-2 rounded text-white z-50 ${
-          toast.type === 'success' ? 'bg-green-500' : toast.type === 'error' ? 'bg-red-500' : toast.type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500'
-        }`}>{toast.msg}</div>
-      )}
+      <Toast toast={toast} onDone={() => setToast(null)} />
 
-      {/* ===== Agent 控制面板 ===== */}
+      {/* Agent 控制面板 */}
       <aside className="w-[320px] min-w-[320px] border-r bg-white flex flex-col shrink-0">
         <div className="flex items-center justify-between px-3 py-2 border-b cursor-pointer select-none"
           onClick={() => setShowConfig(!showConfig)}>
@@ -236,12 +258,14 @@ function Preview() {
         )}
       </aside>
 
-      {/* ===== 渲染区 ===== */}
+      {/* 渲染区 */}
       <main className="flex-1 overflow-auto p-6 bg-gray-50">
-        {components.length > 0 ? (
+        {a2ui.surface ? (
           <div className="max-w-3xl mx-auto">
             <div className="bg-white rounded-lg p-6 shadow-sm">
-              <A2UIRenderer key={renderKey} components={components} dataModel={dataModel} onEvent={handleEvent} />
+              <ErrorBoundary>
+                <A2uiSurface surface={a2ui.surface} />
+              </ErrorBoundary>
             </div>
           </div>
         ) : (
@@ -254,5 +278,45 @@ function Preview() {
         )}
       </main>
     </div>
+  )
+}
+
+/**
+ * 预览模式入口
+ *
+ * 层级结构：
+ *   ErrorBoundary → A2UIProvider(持有 MessageProcessor + SurfaceModel) → PreviewInner
+ *
+ * catalog 在模块级别创建一次，避免每次渲染重建
+ */
+const catalog = createA2UICatalog()
+
+/** React 错误边界：捕获 A2UI 渲染树中的异常，显示友好错误信息而非白屏 */
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center text-red-500 p-8">
+            <p className="text-lg font-bold mb-2">渲染错误</p>
+            <p className="text-sm font-mono">{this.state.error.message}</p>
+            <pre className="text-xs mt-2 text-left max-h-60 overflow-auto">{this.state.error.stack}</pre>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+function Preview() {
+  return (
+    <ErrorBoundary>
+      <A2UIProvider catalog={catalog}>
+        <PreviewInner />
+      </A2UIProvider>
+    </ErrorBoundary>
   )
 }
