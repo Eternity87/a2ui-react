@@ -31,10 +31,13 @@ async function callGemini(
   const baseUrl = config.baseUrl ?? 'https://generativelanguage.googleapis.com'
 
   const resp = await fetch(
-    `${baseUrl}/v1beta/models/${model}:generateContent?key=${config.apiKey}`,
+    `${baseUrl}/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': config.apiKey ?? '',
+      },
       body: JSON.stringify({
         systemInstruction: {
           parts: [{ text: systemPrompt }],
@@ -107,7 +110,44 @@ function extractJson(raw: string): any {
   if (start !== -1 && end > start) {
     text = text.slice(start, end + 1)
   }
-  return JSON.parse(text)
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    // JSON 解析失败，尝试修复常见 LLM 输出问题
+    const repaired = repairJson(text)
+    if (repaired) {
+      try { return JSON.parse(repaired) } catch { /* fall through */ }
+    }
+    throw new Error(`Agent 返回了无效 JSON: ${raw.slice(0, 200)}`)
+  }
+}
+
+/** 修复常见 LLM JSON 输出问题：尾部逗号、单引号、注释、截断括号 */
+function repairJson(text: string): string | null {
+  let repaired = text
+    .replace(/\/\/.*$/gm, '')        // 单行注释
+    .replace(/\/\*[\s\S]*?\*\//g, '') // 多行注释
+    .replace(/,\s*([}\]])/g, '$1')    // 尾部逗号
+    .replace(/'/g, '"')               // 单引号 → 双引号（朴素替换）
+
+  // 补齐截断的括号
+  let openBraces = 0, openBrackets = 0
+  let inString = false, skipNext = false
+  for (const ch of repaired) {
+    if (skipNext) { skipNext = false; continue }
+    if (ch === '\\') { skipNext = true; continue }
+    if (ch === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (ch === '{') openBraces++
+    if (ch === '}') openBraces--
+    if (ch === '[') openBrackets++
+    if (ch === ']') openBrackets--
+  }
+  if (openBraces > 0) repaired += '}'.repeat(openBraces)
+  if (openBrackets > 0) repaired += ']'.repeat(openBrackets)
+
+  return repaired !== text ? repaired : null
 }
 
 // ===== 校验输出 =====

@@ -50,4 +50,12 @@ export const actionRegistry = {
       target: { type: 'string', required: true, description: '目标 JSON Pointer 路径' },
     },
   },
+  navigate: {
+    type: 'navigate',
+    description: '跨页面导航，携带 URL 参数到目标页面',
+    params: {
+      pageId: { type: 'string', required: true, description: '目标页面 ID（pages 对象的 key）' },
+      params: { type: 'object', description: '导航参数字典，值可为静态值或路径引用（/fieldName）' },
+    },
+  },
 } as const

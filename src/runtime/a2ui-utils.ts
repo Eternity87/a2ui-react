@@ -6,7 +6,7 @@
  */
 
 import type { DataModel } from '@a2ui/web_core/v0_9'
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useRef, useSyncExternalStore } from 'react'
 
 // ===== 表达式安全校验 =====
 
@@ -15,8 +15,20 @@ const FORBIDDEN_EXPR = /\b(?:constructor|__proto__|prototype|window|document|glo
 
 /** 校验表达式不包含危险标识符，抛出异常则拒绝执行 */
 export function validateExpression(expr: string, label?: string): void {
-  if (FORBIDDEN_EXPR.test(expr)) {
-    throw new Error(`[${label ?? 'validateExpression'}] Forbidden identifier in expression`)
+  const tag = label ?? 'validateExpression'
+  // 1. Unicode 标准化 (NFC)，防止异体字绕过（如 \u{65}val 等价于 eval）
+  const normalized = expr.normalize('NFC')
+  // 2. 黑名单关键词检测
+  if (FORBIDDEN_EXPR.test(normalized)) {
+    throw new Error(`[${tag}] Forbidden identifier in expression`)
+  }
+  // 3. 禁止方括号属性访问，防止 this['ev'+'al'] 等动态拼接绕过
+  if (/\[['"`]/.test(normalized)) {
+    throw new Error(`[${tag}] Bracket property access not allowed`)
+  }
+  // 4. 禁止 .constructor 访问链，防止 (function(){}).constructor('return this')()
+  if (/\.constructor\b/.test(normalized)) {
+    throw new Error(`[${tag}] Constructor access not allowed`)
   }
 }
 
@@ -37,10 +49,18 @@ export function dmPath(pointer: string): string {
   return '/' + parts.join('/')
 }
 
+/** 可容纳子组件的布局容器类型集合 */
+const CONTAINER_COMPONENTS = new Set(['Row', 'Card'])
+
+/** 注册可容纳子组件的容器类型（供 component-catalog 扩展时调用） */
+export function registerContainerComponent(typeName: string) {
+  CONTAINER_COMPONENTS.add(typeName)
+}
+
 /** 判断组件类型是否可容纳子组件（布局容器） */
 export function canHaveChildren(typeOrComp: any): boolean {
   const type = typeof typeOrComp === 'string' ? typeOrComp : typeOrComp?.component
-  return ['Row', 'Card'].includes(type ?? '')
+  return CONTAINER_COMPONENTS.has(type ?? '')
 }
 
 // ===== DynamicValue 解析 =====
@@ -67,13 +87,20 @@ function resolveDynamicValue(value: any, dm: DataModel): any {
  * 3. 静态值: "提交" / 42 / [...] → 保持原样
  */
 export function resolveProps(raw: Record<string, any>, dm: DataModel): Record<string, any> {
+  // 快路径：无动态绑定直接复用原对象
+  const hasBinding = Object.values(raw).some(v =>
+    (typeof v === 'string' && /\$\{/.test(v)) ||
+    (typeof v === 'object' && v !== null && 'path' in v)
+  )
+  if (!hasBinding) return raw
+
   const resolved: Record<string, any> = {}
   for (const [key, value] of Object.entries(raw)) {
     if (typeof value === 'string') {
       // 模板插值 ${/xxx} → 替换为实际值
       resolved[key] = value.replace(/\$\{\/([^}]+)\}/g, (_, path: string) => {
         const val = getByPointer(dm, `/${path.trim()}`)
-        return val !== undefined ? String(val) : `\${/${path}}`
+        return val !== undefined ? String(val) : ''
       })
     } else if (typeof value === 'object' && value !== null && 'path' in value) {
       // DataBinding { "path": "..." } → 解析为实际值
@@ -94,6 +121,28 @@ export function getBindingPath(rawValue: any): string | undefined {
 }
 
 // ===== 响应式 Hook =====
+
+/**
+ * 订阅 DataModel 全量变更的 Hook
+ *
+ * 封装 useSyncExternalStore + versionRef 模式，用于组件级 DataModel 响应式订阅。
+ * createA2UIComponent 工厂已内置此订阅；DataTable/Dialog 等直接使用
+ * createBinderlessComponentImplementation 的组件可通过此 Hook 复用。
+ */
+export function useDataModelSubscription(dm: DataModel) {
+  const versionRef = useRef(0)
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      return dm.subscribe('/', () => {
+        versionRef.current += 1
+        cb()
+      }).unsubscribe
+    },
+    [dm],
+  )
+  const getSnapshot = useCallback(() => versionRef.current, [])
+  useSyncExternalStore(subscribe, getSnapshot)
+}
 
 /**
  * 细粒度响应式数据绑定 Hook

@@ -122,4 +122,15 @@ export const componentCatalog: Record<string, ComponentDef> = {
       emptyText: { type: 'string', defaultValue: '暂无数据', description: '无数据时展示的提示文字' },
     },
   },
+  Dialog: {
+    type: 'Dialog',
+    description: '弹窗容器，内部渲染独立 A2UI 子 Surface（独立 DataModel + Reactions），支持多实例隔离',
+    category: 'layout',
+    props: {
+      open: { type: 'DynamicBoolean', required: true, description: '控制弹窗显隐的 DataBinding { path }，值为 true 时打开' },
+      title: { type: 'string', description: '弹窗标题' },
+      source: { type: 'string', required: true, description: '子页面来源：本地 children key（如 "confirmDialog"）或远程 URL（如 "/api/pages/productPicker"）' },
+      width: { type: 'string', defaultValue: 'max-w-lg', description: '弹窗宽度 CSS class（如 max-w-lg / max-w-2xl / max-w-4xl）' },
+    },
+  },
 } as const

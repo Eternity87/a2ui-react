@@ -126,17 +126,19 @@ export class PipeEngine {
    *     → { productDetail: { price: 100 } }
    *     → compute 表达式中可直接用 productDetail.price
    */
-  private flatData(): Record<string, any> {
+  private flatData(maxDepth = 3): Record<string, any> {
     const result: Record<string, any> = {}
-    const walk = (obj: any, prefix: string) => {
-      if (!obj || typeof obj !== 'object') return
+    const visited = new WeakSet<object>()
+    const walk = (obj: any, prefix: string, depth: number) => {
+      if (depth > maxDepth || !obj || typeof obj !== 'object' || visited.has(obj)) return
+      visited.add(obj)
       for (const [k, v] of Object.entries(obj)) {
         const key = prefix ? `${prefix}.${k}` : k
         if (/^[a-zA-Z_$][\w$]*$/.test(key)) result[key] = v
-        if (typeof v === 'object' && v !== null && !Array.isArray(v)) walk(v, key)
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) walk(v, key, depth + 1)
       }
     }
-    walk(this.dataModel, '')
+    walk(this.dataModel, '', 0)
     return result
   }
 }

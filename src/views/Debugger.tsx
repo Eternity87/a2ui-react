@@ -34,9 +34,12 @@ import { useA2UI } from '@/runtime/a2ui-context'
 import { ReactionEngine } from '@/runtime/reaction-engine'
 import { PipeEngine } from '@/runtime/pipe-engine'
 import { createMockApiExecutor } from '@/mock/api'
-import { ensureRootComponent, extractComponents, extractDataModel, extractDataFromMessages, dataModelToV09Messages } from '@/runtime/a2ui-adapter'
+import { ensureRootComponent, extractComponents, extractDataModel, extractDataFromMessages, dataModelToV09Messages, normalizeToPages, type PageDef } from '@/runtime/a2ui-adapter'
 import { canHaveChildren } from '@/runtime/a2ui-utils'
+import { useSharedStore } from '@/runtime/shared-store'
+import { registerChildPage } from '@/runtime/page-context'
 import { TreeNode } from '@/views/TreeNode'
+import { PageSelector } from '@/views/PageSelector'
 import { A2uiSurface } from '@a2ui/react/v0_9'
 import demoDefault from '@/demo.json'
 import { EditorState } from '@codemirror/state'
@@ -97,6 +100,15 @@ function useCodeMirror(initialDoc: string) {
   return { containerRef, viewRef, create, updateDoc, destroy, getDoc: () => docRef.current }
 }
 
+// ===== 多页面编辑状态 =====
+
+interface PageEditorState {
+  components: any[]
+  reactions: any[]
+  initialDataModel: Record<string, any>
+  children?: Record<string, any>
+}
+
 // ================================================================
 //  主组件：Debugger
 // ================================================================
@@ -104,23 +116,42 @@ export function Debugger() {
   // ---- 官方管线 ----
   const a2ui = useA2UI()
 
-  // ---- 调试器自有状态（组件树编辑的源） ----
-  const [components, setComponents] = useState<any[]>([])
-  const [reactions, setReactions] = useState<any[]>([])
+  // ---- 调试器自有状态（按页编辑） ----
+  const [pages, setPages] = useState<Record<string, PageEditorState>>({})
+  const [currentEditPage, setCurrentEditPage] = useState('main')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [paletteFilter, setPaletteFilter] = useState('')
-  const [dragSource, setDragSource] = useState<{ type: 'palette'; componentType: string } | { type: 'tree'; componentId: string } | null>(null)
+  const [dragSource, setDragSource] = useState<{ type: 'palette'; componentType: string } | { type: 'tree'; componentId: string } | { type: 'column'; tableId: string; colIndex: number } | null>(null)
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' | 'inside' } | null>(null)
   const [showJsonDialog, setShowJsonDialog] = useState(false)
   const [showDmDialog, setShowDmDialog] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
+
+  // 注册 toast 处理器到 A2UI context，供 Dialog 等子组件使用
+  useEffect(() => {
+    a2ui.setToastHandler((msg, type = 'info') => setToast({ msg, type }))
+    return () => a2ui.setToastHandler(console.error)
+  }, [a2ui.setToastHandler])
   const idCounter = useRef(1)
 
   // ---- 引擎与数据 ----
   const engineRef = useRef<ReactionEngine | null>(null)
-  const initialDataModelRef = useRef<Record<string, any>>({})
   const [renderKey, setRenderKey] = useState(0)
+
+  // 当前编辑页的状态（方便访问）
+  const currentPage = pages[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
+  const components = currentPage.components
+  const reactions = currentPage.reactions
+
+  // 包装 setComponents / setReactions 以操作当前页
+  const setComponents = useCallback((updater: any[] | ((prev: any[]) => any[])) => {
+    setPages(prev => {
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
+      const newComps = typeof updater === 'function' ? updater(cur.components) : updater
+      return { ...prev, [currentEditPage]: { ...cur, components: newComps } }
+    })
+  }, [currentEditPage])
 
   const compMap = useMemo(() => {
     const m = new Map<string, any>()
@@ -130,20 +161,23 @@ export function Debugger() {
 
   // ===== 同步：components[] → SurfaceModel =====
 
-  // 用 ref 保存最新值，避免 setTimeout 回调闭包捕获过期数据
-  const surfaceRef = useRef(a2ui?.surface)
-  surfaceRef.current = a2ui?.surface
   const processorRef = useRef(a2ui?.processor)
   processorRef.current = a2ui?.processor
   const componentsRef = useRef(components)
   componentsRef.current = components
+  const editPageRef = useRef(currentEditPage)
+  editPageRef.current = currentEditPage
 
-  /** 将当前组件列表同步到官方 SurfaceModel（debounce 150ms） */
-  const syncToSurface = useCallback(() => {
-    const timer = setTimeout(() => {
-      const surface = surfaceRef.current
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  useEffect(() => {
+    if (components.length === 0) return
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(() => {
       const processor = processorRef.current
-      if (!surface || !processor) return
+      if (!processor) return
+      const pageId = editPageRef.current
+      const surface = a2ui.getSurface(pageId)
+      if (!surface) return
       const v09Comps = componentsRef.current.map(c => ({
         id: c.id,
         component: c.component,
@@ -155,43 +189,54 @@ export function Debugger() {
       }] as any)
       setRenderKey(k => k + 1)
     }, 150)
-    return timer
-  }, [])
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    }
+  }, [components])
 
-  const syncTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  useEffect(() => {
-    if (components.length === 0) return
-    syncTimerRef.current = syncToSurface()
-    return () => clearTimeout(syncTimerRef.current)
-  }, [components, syncToSurface])
-
-  // ===== 加载 JSON =====
+  // ===== 加载 JSON（多页面兼容） =====
 
   const loadJson = useCallback((data: any) => {
-    const su = data.a2ui?.find((m: any) => 'surfaceUpdate' in m)
-    if (!su) return
-
-    // 解析组件列表（调试器自有状态）
-    const comps = JSON.parse(JSON.stringify(su.surfaceUpdate.components)) as any[]
+    const normalized = normalizeToPages(data)
+    const newPages: Record<string, PageEditorState> = {}
     let maxN = 0
-    for (const c of comps) {
-      const m = (c.id as string).match(/(\d+)$/)
-      if (m) maxN = Math.max(maxN, parseInt(m[1]))
+
+    for (const [pageId, page] of Object.entries(normalized.pages)) {
+      const su = page.a2ui?.find((m: any) => 'surfaceUpdate' in m)
+      const comps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
+      for (const c of comps) {
+        const m = (c.id as string).match(/(\d+)$/)
+        if (m) maxN = Math.max(maxN, parseInt(m[1]))
+      }
+      newPages[pageId] = {
+        components: comps,
+        reactions: page.logic?.reactions ? structuredClone(page.logic.reactions) : [],
+        initialDataModel: structuredClone(extractDataFromMessages(page.a2ui)),
+        children: page.children ? structuredClone(page.children) : undefined,
+      }
     }
+
     idCounter.current = maxN + 1
-    setComponents(comps)
-
-    // 保存干净副本，用于 JSON 导出（兼容新旧两种格式）
-    initialDataModelRef.current = JSON.parse(JSON.stringify(extractDataFromMessages(data.a2ui)))
-
-    // 通过官方管线加载（创建 surface + dataModel）
-    a2ui?.load(data.a2ui)
-
-    const reacts = data.logic?.reactions ? JSON.parse(JSON.stringify(data.logic.reactions)) : []
-    setReactions(reacts)
+    setPages(newPages)
     setSelectedId(null)
+    setCollapsedIds(new Set())
+
+    // 通过官方管线加载每个页面的 surface + 注册内嵌子页面
+    for (const [pageId, page] of Object.entries(normalized.pages)) {
+      a2ui.load(page.a2ui, { pageId })
+      if (page.children) {
+        for (const [childName, childDef] of Object.entries(page.children)) {
+          registerChildPage(pageId, childName, childDef as PageDef)
+        }
+      }
+    }
+
+    // 设置首页为当前编辑页
+    const firstPage = Object.keys(normalized.pages)[0] ?? 'main'
+    setCurrentEditPage(firstPage)
+    a2ui.setCurrentSurfaceId(firstPage)
     setRenderKey(k => k + 1)
-  }, [a2ui])
+  }, [])
 
   // ===== 初始化 =====
 
@@ -199,20 +244,44 @@ export function Debugger() {
     loadJson(demoDefault)
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ===== ReactionEngine =====
+  // 页面切换时清除选中
+  useEffect(() => {
+    setSelectedId(null)
+  }, [currentEditPage])
+
+  // ===== ReactionEngine（绑定到当前编辑页） =====
+  // 注意：必须从 a2ui 解构稳定方法，不能用 a2ui 本身 —— useA2UI() 每次 render 返回新对象引用
+
+  // 用 ref 存储 context 函数引用，避免 effect 因 a2ui.surface 变化而重复触发
+  const getSurfaceRef = useRef(a2ui.getSurface)
+  getSurfaceRef.current = a2ui.getSurface
+  const setCurrentSurfaceIdRef = useRef(a2ui.setCurrentSurfaceId)
+  setCurrentSurfaceIdRef.current = a2ui.setCurrentSurfaceId
 
   useEffect(() => {
-    if (!a2ui?.surface || reactions.length === 0) {
+    const surface = getSurfaceRef.current(currentEditPage)
+    if (!surface || reactions.length === 0) {
       engineRef.current?.destroy()
       engineRef.current = null
       return
     }
 
     engineRef.current?.destroy()
-    const engine = new ReactionEngine(a2ui.surface.dataModel, reactions, {
+    const engine = new ReactionEngine(surface.dataModel, reactions, {
       apiExecutor: createMockApiExecutor(),
-      pipeEngine: new PipeEngine(a2ui.surface.dataModel.get('/') ?? {}),
+      pipeEngine: new PipeEngine(surface.dataModel.get('/') ?? {}),
       toast: (msg, type = 'info') => setToast({ msg, type }),
+      sharedStore: useSharedStore,
+      navigate: (pageId, params) => {
+        const targetSurface = getSurfaceRef.current(pageId)
+        if (targetSurface && params) {
+          for (const [k, v] of Object.entries(params)) {
+            targetSurface.dataModel.set(`/navParams/${k}`, v)
+          }
+        }
+        setCurrentEditPage(pageId)
+        setCurrentSurfaceIdRef.current(pageId)
+      },
     })
     engine.boot()
     engineRef.current = engine
@@ -221,18 +290,17 @@ export function Debugger() {
       engine.destroy()
       engineRef.current = null
     }
-  }, [a2ui?.surface, reactions])
+  }, [currentEditPage, reactions])
 
   // ===== Action 事件 → ReactionEngine =====
 
   useEffect(() => {
-    if (!a2ui?.surface) return
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
         engineRef.current?.triggerReaction(action.context.reactionId)
       }
     })
-  }, [a2ui?.surface])
+  }, [a2ui.currentSurfaceId])
 
   // ===== Toast =====
 
@@ -283,9 +351,11 @@ export function Debugger() {
     })
     const newComp = { id, component: type, props }
     if (selectedComponent && canHaveChildren(selectedComponent)) {
-      const sel = components.find(c => c.id === selectedId)!
-      if (!sel.props.children) sel.props.children = []
-      sel.props.children.push(id)
+      setComponents(prev => prev.map(c =>
+        c.id === selectedId
+          ? { ...c, props: { ...c.props, children: [...(c.props.children || []), id] } }
+          : c
+      ))
     }
     setComponents(prev => [...prev, newComp])
     setSelectedId(id)
@@ -307,39 +377,40 @@ export function Debugger() {
     setSelectedId(null)
   }
 
-  /** 纯函数：在组件数组中把 id 插入到 targetId 的指定位置，返回新数组 */
+  /** 纯函数：在组件数组中把 id 插入到 targetId 的指定位置，返回新数组（O(depth) 仅修改受影响的父节点） */
   function insertIntoTree(
     comps: any[], id: string, targetId: string, position: 'before' | 'after' | 'inside',
   ): any[] {
-    const next = comps.map(c => ({
-      ...c,
-      props: { ...c.props, children: c.props?.children ? [...c.props.children] : undefined },
-    }))
     if (position === 'inside') {
-      const target = next.find(c => c.id === targetId)!
-      if (!target.props.children) target.props.children = []
-      target.props.children.push(id)
-    } else {
-      const parentId = getParentId(next, targetId)
-      if (parentId) {
-        const parent = next.find(c => c.id === parentId)!
-        const idx = parent.props.children.indexOf(targetId)
-        if (position === 'before') parent.props.children.splice(idx, 0, id)
-        else parent.props.children.splice(idx + 1, 0, id)
-      }
+      return comps.map(c =>
+        c.id === targetId
+          ? { ...c, props: { ...c.props, children: [...(c.props.children || []), id] } }
+          : c
+      )
     }
-    return next
+    const parentId = getParentId(comps, targetId)
+    if (!parentId) return comps
+    return comps.map(c => {
+      if (c.id !== parentId) return c
+      const children = [...(c.props.children || [])]
+      const idx = children.indexOf(targetId)
+      if (position === 'before') children.splice(idx, 0, id)
+      else children.splice(idx + 1, 0, id)
+      return { ...c, props: { ...c.props, children } }
+    })
   }
 
   // ===== 拖拽 =====
 
   function onPaletteDragStart(e: React.DragEvent, componentType: string) {
     setDragSource({ type: 'palette', componentType })
+    e.dataTransfer.setData('text/plain', componentType)
     e.dataTransfer.effectAllowed = 'copy'
   }
 
   function onTreeNodeDragStart(e: React.DragEvent, componentId: string) {
     setDragSource({ type: 'tree', componentId })
+    e.dataTransfer.setData('text/plain', componentId)
     e.dataTransfer.effectAllowed = 'move'
   }
 
@@ -357,7 +428,7 @@ export function Debugger() {
     if (y < h * 0.3) position = 'before'
     else if (y > h * 0.7) position = 'after'
     else if (canHaveChildren(compMap.get(targetId))) position = 'inside'
-    else position = 'before'
+    else position = y < h * 0.5 ? 'before' : 'after'
     setDropIndicator({ targetId, position })
   }
 
@@ -402,6 +473,54 @@ export function Debugger() {
 
   function onDragEnd() { setDragSource(null); setDropIndicator(null) }
 
+  // ===== 列拖拽（DataTable columns 重排序） =====
+
+  function onColumnDragStart(e: React.DragEvent, tableId: string, colIndex: number) {
+    setDragSource({ type: 'column', tableId, colIndex })
+    e.dataTransfer.setData('text/plain', `${tableId}$col$${colIndex}`)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function onColumnDragOver(e: React.DragEvent, virtualId: string) {
+    if (!dragSource) return
+    // 仅处理同表列拖拽，其他源类型忽略列目标
+    if (dragSource.type !== 'column') return
+    const [tableId] = virtualId.split('$col$')
+    if (tableId !== dragSource.tableId) return
+    e.preventDefault()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const position = y < rect.height * 0.5 ? 'before' : 'after'
+    setDropIndicator({ targetId: virtualId, position })
+  }
+
+  function onColumnDrop(e: React.DragEvent, virtualId: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dragSource || !dropIndicator) return
+
+    if (dragSource.type === 'column') {
+      const [tableId, colIdxStr] = virtualId.split('$col$')
+      const targetIndex = parseInt(colIdxStr)
+      if (isNaN(targetIndex)) return
+
+      setComponents(prev => prev.map(c => {
+        if (c.id !== tableId) return c
+        const cols = [...c.props.columns]
+        const [moved] = cols.splice(dragSource.colIndex, 1)
+        // 移除后重新计算目标位置
+        let insertAt = targetIndex
+        if (dragSource.colIndex < targetIndex) insertAt--
+        if (dropIndicator.position === 'after') insertAt++
+        cols.splice(insertAt, 0, moved)
+        return { ...c, props: { ...c.props, columns: cols } }
+      }))
+    }
+
+    setDragSource(null)
+    setDropIndicator(null)
+  }
+
   // ===== 属性编辑 =====
 
   function updateProp(key: string, value: any) {
@@ -445,21 +564,32 @@ export function Debugger() {
   const dmCm = useCodeMirror('')
 
   function openJsonDialog() {
-    const output = {
-      a2ui: [
-        { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
-        { surfaceUpdate: { surfaceId: 'main', components } },
-        ...dataModelToV09Messages('main', initialDataModelRef.current),
-      ],
-      logic: { reactions },
+    // 序列化所有页面为多页面 JSON 格式
+    const serializedPages: Record<string, any> = {}
+    for (const [pageId, ps] of Object.entries(pages)) {
+      serializedPages[pageId] = {
+        a2ui: [
+          { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
+          { surfaceUpdate: { surfaceId: 'main', components: ps.components } },
+          ...dataModelToV09Messages('main', ps.initialDataModel),
+        ],
+        logic: { reactions: ps.reactions },
+        ...(ps.children ? { children: ps.children } : {}),
+      }
     }
+    // 多页→外层 pages 包裹；单页→兼容旧格式（顶层 a2ui/logic）
+    const output = Object.keys(serializedPages).length === 1 && serializedPages['main']
+      ? serializedPages['main']
+      : { pages: serializedPages }
+
     jsonCm.updateDoc(JSON.stringify(output, null, 2))
     setShowJsonDialog(true)
   }
 
   function openDmDialog() {
-    const dm = a2ui?.surface ? extractDataModel(a2ui.surface) : {}
-    dmCm.updateDoc(JSON.stringify(JSON.parse(JSON.stringify(dm)), null, 2))
+    const surface = a2ui.getSurface(currentEditPage)
+    const dm = surface ? extractDataModel(surface) : {}
+    dmCm.updateDoc(JSON.stringify(structuredClone(dm), null, 2))
     setShowDmDialog(true)
   }
 
@@ -505,14 +635,21 @@ export function Debugger() {
   // ===== 导出 =====
 
   function exportJson() {
-    const output = {
-      a2ui: [
-        { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
-        { surfaceUpdate: { surfaceId: 'main', components } },
-        ...dataModelToV09Messages('main', initialDataModelRef.current),
-      ],
-      logic: { reactions },
+    const serializedPages: Record<string, any> = {}
+    for (const [pageId, ps] of Object.entries(pages)) {
+      serializedPages[pageId] = {
+        a2ui: [
+          { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
+          { surfaceUpdate: { surfaceId: 'main', components: ps.components } },
+          ...dataModelToV09Messages('main', ps.initialDataModel),
+        ],
+        logic: { reactions: ps.reactions },
+      }
     }
+    const output = Object.keys(serializedPages).length === 1 && serializedPages['main']
+      ? serializedPages['main']
+      : { pages: serializedPages }
+
     navigator.clipboard.writeText(JSON.stringify(output, null, 2))
       .then(() => showToast('已复制到剪贴板', 'success'))
   }
@@ -613,6 +750,8 @@ export function Debugger() {
                 }}
                 onDragStart={onTreeNodeDragStart} onDragOver={onTreeNodeDragOver}
                 onDragLeave={() => {}} onDrop={onTreeNodeDrop} onDragEnd={onDragEnd}
+                onColumnDragStart={onColumnDragStart} onColumnDragOver={onColumnDragOver}
+                onColumnDrop={onColumnDrop}
               />
             ))}
             {treeRoots.length === 0 && (
@@ -624,7 +763,16 @@ export function Debugger() {
 
       {/* ===== 中间：渲染区 ===== */}
       <main className="flex-1 min-w-0 flex flex-col">
-        <div className="flex gap-2 p-2 bg-white border-b shrink-0">
+        <div className="flex gap-2 p-2 bg-white border-b shrink-0 items-center flex-wrap">
+          <PageSelector
+            pageIds={Object.keys(pages)}
+            currentPageId={currentEditPage}
+            onSelect={(pid) => {
+              setCurrentEditPage(pid)
+              a2ui?.setCurrentSurfaceId(pid)
+            }}
+          />
+          <div className="w-px h-6 bg-gray-200" />
           <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>上传 JSON</Button>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
           <Button size="sm" variant="outline" onClick={openJsonDialog}>显示 JSON</Button>
@@ -632,16 +780,19 @@ export function Debugger() {
           <Button size="sm" variant="destructive" disabled={!selectedId || isColumnSelected} onClick={deleteComponent}>删除</Button>
         </div>
         <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-          <div className="text-xs text-gray-400 mb-2 uppercase">实时渲染预览</div>
-          {a2ui?.surface ? (
-            <div className="bg-white rounded-lg p-5 shadow-sm min-h-[200px]">
-              <A2uiSurface key={renderKey} surface={a2ui.surface} />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-[200px] bg-white rounded-lg shadow-sm text-gray-400 text-sm">
-              从左侧拖拽组件到此处
-            </div>
-          )}
+          <div className="text-xs text-gray-400 mb-2 uppercase">实时渲染预览 — {currentEditPage}</div>
+          {(() => {
+            const surf = a2ui.getSurface(currentEditPage)
+            return surf ? (
+              <div className="bg-white rounded-lg p-5 shadow-sm min-h-[200px]">
+                <A2uiSurface key={`${currentEditPage}-${renderKey}`} surface={surf} />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-[200px] bg-white rounded-lg shadow-sm text-gray-400 text-sm">
+                从左侧拖拽组件到此处
+              </div>
+            )
+          })()}
         </div>
       </main>
 

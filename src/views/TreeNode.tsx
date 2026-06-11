@@ -12,6 +12,7 @@
  */
 
 import { canHaveChildren } from '@/runtime/a2ui-utils'
+import type { DragEvent } from 'react'
 
 interface TreeNodeProps {
   nodeId: string
@@ -22,16 +23,20 @@ interface TreeNodeProps {
   dropIndicator: { targetId: string; position: 'before' | 'after' | 'inside' } | null
   onSelect: (id: string) => void
   onToggleCollapse: (id: string) => void
-  onDragStart: (e: React.DragEvent, id: string) => void
-  onDragOver: (e: React.DragEvent, id: string) => void
+  onDragStart: (e: DragEvent, id: string) => void
+  onDragOver: (e: DragEvent, id: string) => void
   onDragLeave: () => void
-  onDrop: (e: React.DragEvent, id: string) => void
+  onDrop: (e: DragEvent, id: string) => void
   onDragEnd: () => void
+  onColumnDragStart?: (e: DragEvent, tableId: string, colIndex: number) => void
+  onColumnDragOver?: (e: DragEvent, virtualId: string) => void
+  onColumnDrop?: (e: DragEvent, virtualId: string) => void
 }
 
 export function TreeNode({
   nodeId, compMap, selectedId, collapsedIds, depth, dropIndicator,
   onSelect, onToggleCollapse, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd,
+  onColumnDragStart, onColumnDragOver, onColumnDrop,
 }: TreeNodeProps) {
   const node = compMap.get(nodeId)
   if (!node) return null
@@ -106,6 +111,9 @@ export function TreeNode({
               onDragLeave={onDragLeave}
               onDrop={onDrop}
               onDragEnd={onDragEnd}
+              onColumnDragStart={onColumnDragStart}
+              onColumnDragOver={onColumnDragOver}
+              onColumnDrop={onColumnDrop}
             />
           ))}
           {colVirtualChildren.map((col: any) => (
@@ -113,8 +121,20 @@ export function TreeNode({
               key={col.virtualId}
               className={`tree-row tree-row-col ${col.virtualId === selectedId ? 'tree-row-selected' : ''}`}
               style={{ paddingLeft: ((depth + 1) * 16 + 8) + 'px' }}
+              draggable
               onClick={e => { e.stopPropagation(); onSelect(col.virtualId) }}
+              onDragStart={e => onColumnDragStart?.(e, nodeId, col.colIndex)}
+              onDragEnd={onDragEnd}
+              onDragOver={e => { e.preventDefault(); onColumnDragOver?.(e, col.virtualId) }}
+              onDragLeave={onDragLeave}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); onColumnDrop?.(e, col.virtualId) }}
             >
+              {dropIndicator?.targetId === col.virtualId && (
+                <>
+                  {dropIndicator.position === 'before' && <div className="drop-line drop-line-before" />}
+                  {dropIndicator.position === 'after' && <div className="drop-line drop-line-after" />}
+                </>
+              )}
               <span className="tree-toggle invisible">▼</span>
               <span className="tree-tag tree-tag-col">{col.cellType}</span>
               <span className="tree-label">{col.key || '(未命名)'}</span>

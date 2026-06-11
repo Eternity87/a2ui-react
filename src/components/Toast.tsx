@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface ToastProps {
   toast: { msg: string; type: string } | null
@@ -14,11 +14,19 @@ const typeClass: Record<string, string> = {
 }
 
 export function Toast({ toast, onDone, duration = 3000 }: ToastProps) {
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
+  const [trigger, setTrigger] = useState(0)
+
+  useEffect(() => {
+    if (toast) setTrigger(t => t + 1)
+  }, [toast])
+
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(onDone, duration)
+    const t = setTimeout(() => onDoneRef.current(), duration)
     return () => clearTimeout(t)
-  }, [toast, onDone, duration])
+  }, [toast, duration, trigger])
 
   if (!toast) return null
 

@@ -10,6 +10,23 @@ import { apiCatalog } from '../catalogs/api-catalog'
 
 // ===== 核心 DSL 规范（固定部分） =====
 
+function buildMultiPageSection(): string {
+  return `
+### 多页面支持（可选）
+如需多个页面（列表+详情），使用 pages 格式：
+{ "pages": { "page_list": { "a2ui": [...], "logic": {...} }, "page_detail": {...} }, "shared": { "dataModel": {...} } }
+- 每页 surfaceId 始终填 "main"（系统自动分配唯一 ID）
+- 跨页导航用 navigate Action；目标页 init 通过 /navParams/xxx 读参数
+- shared.dataModel 定义全局共享初始数据
+
+### navigate 跨页导航
+{ "type": "navigate", "pageId": "page_detail", "params": { "id": "/selectedOrderId" } }
+- pageId 对应 pages 对象的 key
+- params 值可为静态值或 /fieldName 路径引用
+- 导航后 URL hash 自动更新，支持浏览器前进/后退
+`
+}
+
 function buildDSLSpec(): string {
   return `
 ## DSL 核心语法
@@ -262,6 +279,8 @@ export function buildSystemPrompt(userRequirement: string, context?: {
   return `你是低代码页面生成器。根据用户的自然语言需求，生成完整的 A2UI + Logic JSON。
 
 ${buildDSLSpec()}
+
+${buildMultiPageSection()}
 
 ${buildExecutionModel()}
 

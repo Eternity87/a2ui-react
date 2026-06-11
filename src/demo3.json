@@ -1,0 +1,415 @@
+{
+  "pages": {
+    "page_orderList": {
+      "a2ui": [
+        {
+          "beginRendering": {
+            "surfaceId": "main",
+            "catalogId": "basic"
+          }
+        },
+        {
+          "surfaceUpdate": {
+            "surfaceId": "main",
+            "components": [
+              {
+                "id": "root",
+                "component": "Card",
+                "props": {
+                  "title": "订单列表",
+                  "children": ["searchRow", "orderTable", "createBtn"]
+                }
+              },
+              {
+                "id": "searchRow",
+                "component": "Row",
+                "props": {
+                  "children": ["searchField", "searchBtn"],
+                  "gap": 8
+                }
+              },
+              {
+                "id": "searchField",
+                "component": "TextField",
+                "props": {
+                  "label": "搜索",
+                  "value": { "path": "/searchKeyword" },
+                  "placeholder": "订单号 / 产品名"
+                }
+              },
+              {
+                "id": "searchBtn",
+                "component": "Button",
+                "props": {
+                  "label": "搜索",
+                  "variant": "secondary",
+                  "reactionId": "searchOrders"
+                }
+              },
+              {
+                "id": "createBtn",
+                "component": "Button",
+                "props": {
+                  "label": "创建订单",
+                  "variant": "primary",
+                  "reactionId": "goCreate"
+                }
+              },
+              {
+                "id": "orderTable",
+                "component": "DataTable",
+                "props": {
+                  "columns": [
+                    { "key": "orderId", "label": "订单号" },
+                    { "key": "productName", "label": "产品" },
+                    { "key": "quantity", "label": "数量" },
+                    { "key": "unitPrice", "label": "单价" },
+                    { "key": "totalPrice", "label": "总价" },
+                    { "key": "status", "label": "状态" },
+                    { "key": "createdAt", "label": "创建时间" }
+                  ],
+                  "value": { "path": "/orders" },
+                  "emptyText": "暂无订单数据"
+                }
+              }
+            ]
+          }
+        },
+        { "updateDataModel": { "surfaceId": "main", "path": "/searchKeyword", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/orders", "value": [] } }
+      ],
+      "logic": {
+        "reactions": [
+          {
+            "id": "initOrders",
+            "when": { "field": "/_", "event": "init" },
+            "then": [
+              {
+                "type": "apiRequest",
+                "url": "/api/orders",
+                "method": "GET",
+                "outputTo": "/rawOrders"
+              },
+              {
+                "type": "setValues",
+                "map": {
+                  "/orders": {
+                    "pipe": [{ "get": "/rawOrders.list" }]
+                  }
+                }
+              },
+              {
+                "type": "condition",
+                "branches": [
+                  {
+                    "if": "shared.lastOrderId",
+                    "then": [
+                      { "type": "toast", "message": "上次创建订单成功 (订单号: $shared.lastOrderId)，来自共享状态", "variant": "info" }
+                    ]
+                  },
+                  {
+                    "then": [
+                      { "type": "toast", "message": "欢迎使用订单管理系统", "variant": "info" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "searchOrders",
+            "when": { "field": "searchBtn", "event": "click" },
+            "then": [
+              {
+                "type": "apiRequest",
+                "url": "/api/orders",
+                "method": "GET",
+                "params": { "keyword": "/searchKeyword" },
+                "outputTo": "/rawOrders"
+              },
+              {
+                "type": "setValues",
+                "map": {
+                  "/orders": {
+                    "pipe": [{ "get": "/rawOrders.list" }]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "goCreate",
+            "when": { "field": "createBtn", "event": "click" },
+            "then": [
+              { "type": "navigate", "pageId": "page_orderCreate", "params": { "source": "orderList" } }
+            ]
+          }
+        ]
+      }
+    },
+    "page_orderCreate": {
+      "a2ui": [
+        {
+          "beginRendering": {
+            "surfaceId": "main",
+            "catalogId": "basic"
+          }
+        },
+        {
+          "surfaceUpdate": {
+            "surfaceId": "main",
+            "components": [
+              {
+                "id": "root",
+                "component": "Row",
+                "props": {
+                  "children": ["card1", "card2", "backBtn"],
+                  "gap": 16
+                }
+              },
+              {
+                "id": "card1",
+                "component": "Card",
+                "props": {
+                  "title": "产品信息",
+                  "children": ["catLabel", "catSelect", "prodSelect", "priceText"]
+                }
+              },
+              {
+                "id": "catLabel",
+                "component": "Text",
+                "props": { "text": "产品大类" }
+              },
+              {
+                "id": "catSelect",
+                "component": "Select",
+                "props": {
+                  "label": "产品大类",
+                  "value": { "path": "/productCategory" },
+                  "options": { "path": "/categoryOptions" },
+                  "placeholder": "请选择产品大类"
+                }
+              },
+              {
+                "id": "prodSelect",
+                "component": "Select",
+                "props": {
+                  "label": "产品",
+                  "value": { "path": "/productId" },
+                  "options": { "path": "/productOptions" },
+                  "placeholder": "请先选择大类"
+                }
+              },
+              {
+                "id": "priceText",
+                "component": "Text",
+                "props": { "text": "单价: ${/unitPrice} 元/${/unit}" }
+              },
+              {
+                "id": "card2",
+                "component": "Card",
+                "props": {
+                  "title": "订单信息",
+                  "children": ["qtyInput", "totalText", "submitBtn"]
+                }
+              },
+              {
+                "id": "qtyInput",
+                "component": "TextField",
+                "props": {
+                  "label": "数量",
+                  "value": { "path": "/quantity" },
+                  "type": "number",
+                  "placeholder": "请输入数量"
+                }
+              },
+              {
+                "id": "totalText",
+                "component": "Text",
+                "props": { "text": "总价: ${/totalPrice} 元" }
+              },
+              {
+                "id": "submitBtn",
+                "component": "Button",
+                "props": {
+                  "label": "提交订单",
+                  "variant": "primary",
+                  "reactionId": "submit"
+                }
+              },
+              {
+                "id": "backBtn",
+                "component": "Button",
+                "props": {
+                  "label": "返回列表",
+                  "variant": "secondary",
+                  "reactionId": "goBack"
+                }
+              }
+            ]
+          }
+        },
+        { "updateDataModel": { "surfaceId": "main", "path": "/categoryOptions", "value": [
+          { "label": "电子产品", "value": "ELECTRONICS" },
+          { "label": "家具", "value": "FURNITURE" }
+        ] } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productCategory", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productId", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productOptions", "value": [] } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/unitPrice", "value": 0 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/unit", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/quantity", "value": 1 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/totalPrice", "value": 0 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/navParams/source", "value": "" } }
+      ],
+      "logic": {
+        "reactions": [
+          {
+            "id": "showSource",
+            "when": { "field": "/_", "event": "init" },
+            "then": [
+              {
+                "type": "setValues",
+                "map": { "/source": "/navParams/source" }
+              },
+              {
+                "type": "condition",
+                "branches": [
+                  {
+                    "if": "$source === 'orderList'",
+                    "then": [
+                      { "type": "toast", "message": "从订单列表页跳转而来 (source=orderList)", "variant": "info" }
+                    ]
+                  },
+                  {
+                    "then": [
+                      { "type": "toast", "message": "直接打开创建页 (无导航参数)", "variant": "info" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "loadProducts",
+            "when": { "field": "/productCategory", "event": "change" },
+            "then": [
+              { "type": "cascade", "target": "/productId" },
+              { "type": "setValues", "map": { "/productOptions": [] } },
+              {
+                "type": "apiRequest",
+                "url": "/api/products",
+                "params": { "category": "/productCategory" },
+                "outputTo": "/rawProducts"
+              },
+              {
+                "type": "setValues",
+                "map": {
+                  "/productOptions": {
+                    "pipe": [
+                      { "get": "/rawProducts.list" },
+                      { "map": "({ label: $.name + ($.status === 'discontinued' ? ' (停产)' : ''), value: $.id })" }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "loadDetail",
+            "when": { "field": "/productId", "event": "change" },
+            "then": [
+              {
+                "type": "apiRequest",
+                "url": "/api/product-detail",
+                "params": { "id": "/productId" },
+                "outputTo": "/productDetail"
+              },
+              {
+                "type": "setValues",
+                "map": {
+                  "/unitPrice": "/productDetail.price",
+                  "/unit": "/productDetail.unit"
+                }
+              },
+              {
+                "type": "condition",
+                "branches": [
+                  {
+                    "if": "$productDetail.status === 'discontinued'",
+                    "then": [
+                      { "type": "toast", "message": "该产品已停产，请重新选择", "variant": "warning" }
+                    ]
+                  },
+                  {
+                    "then": [
+                      { "type": "toast", "message": "产品信息已加载", "variant": "success" }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "calcTotal",
+            "when": { "field": "/quantity", "event": "change" },
+            "then": [
+              {
+                "type": "setValues",
+                "map": {
+                  "/totalPrice": {
+                    "pipe": [
+                      { "get": "/unitPrice" },
+                      { "compute": "$value * quantity" }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "id": "submit",
+            "when": { "field": "submitBtn", "event": "click" },
+            "then": [
+              {
+                "type": "validate",
+                "rules": [
+                  { "field": "/productCategory", "required": true, "message": "请选择产品大类" },
+                  { "field": "/productId", "required": true, "message": "请选择产品" },
+                  { "field": "/quantity", "required": true, "message": "请输入数量" }
+                ]
+              },
+              {
+                "type": "apiRequest",
+                "url": "/api/orders",
+                "method": "POST",
+                "body": {
+                  "productId": "/productId",
+                  "quantity": "/quantity",
+                  "unitPrice": "/unitPrice"
+                },
+                "outputTo": "/orderResult"
+              },
+              { "type": "toast", "message": "订单提交成功！", "variant": "success" },
+              { "type": "setValues", "map": { "/shared/lastOrderId": "/orderResult.orderId" } },
+              { "type": "navigate", "pageId": "page_orderList" }
+            ]
+          },
+          {
+            "id": "goBack",
+            "when": { "field": "backBtn", "event": "click" },
+            "then": [
+              { "type": "navigate", "pageId": "page_orderList" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "shared": {
+    "dataModel": {
+      "userInfo": null,
+      "token": null
+    }
+  }
+}

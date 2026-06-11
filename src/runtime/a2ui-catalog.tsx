@@ -8,16 +8,26 @@
  * 组件列表：Text / Row / Card / TextField / Select / Button / DataTable
  */
 
-import React, { useCallback, useSyncExternalStore } from 'react'
+import React, { useCallback, useSyncExternalStore, useEffect, useMemo, useRef, useState } from 'react'
 import { createBinderlessComponentImplementation, type ReactComponentImplementation } from '@a2ui/react/v0_9'
 import { Catalog } from '@a2ui/web_core/v0_9'
 import type { ComponentContext } from '@a2ui/web_core/v0_9'
-import { dmPath, getBindingPath, resolveProps } from './a2ui-utils'
+import { dmPath, getBindingPath, resolveProps, useDataModelSubscription } from './a2ui-utils'
+import { useA2UI } from './a2ui-context'
+import { ReactionEngine } from './reaction-engine'
+import { PipeEngine } from './pipe-engine'
+import { createMockApiExecutor, fetchPageSource } from '@/mock/api'
+import { getChildPage } from './page-context'
+import { useSharedStore } from './shared-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { A2uiSurface } from '@a2ui/react/v0_9'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
 
 // ===== 类型 =====
 
@@ -54,13 +64,18 @@ export function createA2UIComponent<P = Record<string, any>>(
     { name, schema: {} as any },
     ({ context, buildChild }: A2UIRenderProps) => {
       const dm = context.dataContext.dataModel
+      const versionRef = useRef(0)
 
       const subscribe = useCallback(
-        (cb: () => void) => dm.subscribe('/', () => cb()).unsubscribe,
+        (cb: () => void) => {
+          return dm.subscribe('/', () => {
+            versionRef.current += 1
+            cb()
+          }).unsubscribe
+        },
         [dm],
       )
-      // JSON.stringify 解决 DataModel 对象引用复用导致 React 跳过重渲染
-      const getSnapshot = useCallback(() => JSON.stringify(dm.get('/')), [dm])
+      const getSnapshot = useCallback(() => versionRef.current, [])
       useSyncExternalStore(subscribe, getSnapshot)
 
       const rawProps = context.componentModel.properties
@@ -191,9 +206,7 @@ const DataTableImpl = createBinderlessComponentImplementation(
   { name: 'DataTable', schema: {} as any },
   ({ context }: A2UIRenderProps) => {
     const dm = context.dataContext.dataModel
-    const sub = useCallback((cb: () => void) => dm.subscribe('/', () => cb()).unsubscribe, [dm])
-    const snap = useCallback(() => JSON.stringify(dm.get('/')), [dm])
-    useSyncExternalStore(sub, snap)
+    useDataModelSubscription(dm)
 
     const rawProps = context.componentModel.properties
     const props = resolveProps(rawProps, dm)
@@ -258,7 +271,7 @@ const DataTableImpl = createBinderlessComponentImplementation(
             </TableRow>
           ) : (
             rows.map((row: any, rowIndex: number) => (
-              <TableRow key={rowIndex}>
+              <TableRow key={row.id ?? rowIndex}>
                 {columns.map((col: any) => (
                   <TableCell key={col.key}>{renderCell(col, { row, rowIndex })}</TableCell>
                 ))}
@@ -271,12 +284,157 @@ const DataTableImpl = createBinderlessComponentImplementation(
   },
 )
 
+// ===== Dialog 组件（独立子 Surface 弹窗） =====
+
+const DialogImpl = createBinderlessComponentImplementation(
+  { name: 'Dialog', schema: {} as any },
+  ({ context }: A2UIRenderProps) => {
+    const dm = context.dataContext.dataModel
+    useDataModelSubscription(dm)
+
+    const rawProps = context.componentModel.properties
+    const props = resolveProps(rawProps, dm)
+    const open: boolean = props.open ?? false
+    const title: string | undefined = props.title
+    const source: string = props.source ?? ''
+    const width: string = props.width ?? 'max-w-lg'
+
+    const a2ui = useA2UI()
+    const { getSurface, load, destroySurface, currentSurfaceId } = a2ui
+    const parentDataModel = dm
+
+    // 用 ref 存储 context 函数引用，避免 effect 因 context 值变化而重复触发
+    const getSurfaceRef = useRef(getSurface)
+    getSurfaceRef.current = getSurface
+    const loadRef = useRef(load)
+    loadRef.current = load
+    const destroySurfaceRef = useRef(destroySurface)
+    destroySurfaceRef.current = destroySurface
+    const currentSurfaceIdRef = useRef(currentSurfaceId)
+    currentSurfaceIdRef.current = currentSurfaceId
+
+    const [instanceId] = useState(() =>
+      `dlg_${source.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`)
+    const engineRef = useRef<ReactionEngine | null>(null)
+    const [loaded, setLoaded] = useState(false)
+    const remoteReactionsRef = useRef<any[]>([])
+
+    // open 变为 true → 加载子 surface
+    useEffect(() => {
+      if (!open || loaded) return
+      const loadChild = async () => {
+        try {
+          let childA2ui: any[]
+          const sid = currentSurfaceIdRef.current
+          if (source.startsWith('/') || source.startsWith('http')) {
+            const pageData = await fetchPageSource(source)
+            if (!pageData) { setLoaded(true); return }
+            childA2ui = pageData.a2ui ?? []
+            remoteReactionsRef.current = pageData.logic?.reactions ?? []
+          } else {
+            // 尝试多种 pageId 查找（兼容 page_ 前缀有无的情况）
+            let child = getChildPage(sid, source)
+            if (!child && sid.startsWith('page_')) {
+              child = getChildPage(sid.replace('page_', ''), source)
+            }
+            if (!child) {
+              child = getChildPage(`page_${sid}`, source)
+            }
+            if (!child) {
+              console.warn(`[Dialog] Child page "${source}" not found in registry for surface "${sid}"`)
+              setLoaded(true)
+              return
+            }
+            childA2ui = child.a2ui
+            remoteReactionsRef.current = child.logic?.reactions ?? []
+          }
+          // 确保第一条消息是 beginRendering（本地 children 定义中可能省略）
+          if (childA2ui.length > 0 && !('beginRendering' in childA2ui[0])) {
+            childA2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...childA2ui]
+          }
+          loadRef.current(childA2ui, { pageId: instanceId })
+          setLoaded(true)
+        } catch (err: any) {
+          console.error('[Dialog] Failed to load child page:', err?.message || err)
+          setLoaded(true)
+        }
+      }
+      loadChild()
+    }, [open, loaded, source, instanceId])
+
+    // open 变为 false → 清理子 surface
+    useEffect(() => {
+      if (open || !loaded) return
+      engineRef.current?.destroy()
+      engineRef.current = null
+      remoteReactionsRef.current = []
+      destroySurfaceRef.current(instanceId)
+      setLoaded(false)
+    }, [open, loaded, instanceId])
+
+    // 子 surface 创建后 → 创建 ReactionEngine
+    useEffect(() => {
+      if (!loaded || !open) return
+      const surface = getSurfaceRef.current(instanceId)
+      if (!surface) return
+
+      const reactions = remoteReactionsRef.current
+      if (reactions.length === 0) return
+
+      engineRef.current?.destroy()
+      const engine = new ReactionEngine(surface.dataModel, reactions, {
+        apiExecutor: createMockApiExecutor(),
+        pipeEngine: new PipeEngine({}),
+        toast: a2ui.toast,
+        sharedStore: useSharedStore,
+        parentDataModel,
+      })
+      engine.boot()
+      engineRef.current = engine
+
+      // 子 surface 的 click 事件 → engine.triggerReaction
+      const actionSub = surface.onAction.subscribe((action: any) => {
+        if (action.name === 'a2ui.click' && action.context?.reactionId) {
+          engine.triggerReaction(action.context.reactionId)
+        }
+      })
+
+      return () => {
+        actionSub.unsubscribe()
+        engine.destroy()
+        engineRef.current = null
+      }
+    }, [loaded, open, instanceId])
+
+    const childSurface = instanceId ? getSurface(instanceId) : null
+
+    return (
+      <Dialog open={open} onOpenChange={(o) => {
+        if (!o) { context.dataContext.set(dmPath(rawProps.open?.path ?? '/dialogOpen'), false) }
+      }}>
+        <DialogContent className={width} aria-describedby={undefined}>
+          {title && (
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+            </DialogHeader>
+          )}
+          {childSurface ? (
+            <A2uiSurface key={instanceId} surface={childSurface} />
+          ) : (
+            <div className="py-8 text-center text-gray-400 text-sm">加载中...</div>
+          )}
+        </DialogContent>
+      </Dialog>
+    )
+  },
+)
+
 // ===== 创建 Catalog =====
 
 /** 创建包含所有组件实现的 Catalog，供 A2UIProvider 使用 */
 export function createA2UICatalog(): Catalog<ReactComponentImplementation> {
   const components = [
-    TextImpl, RowImpl, CardImpl, TextFieldImpl, SelectImpl, ButtonImpl, DataTableImpl,
+    TextImpl, RowImpl, CardImpl, TextFieldImpl, SelectImpl, ButtonImpl, DataTableImpl, DialogImpl,
   ]
   return new Catalog('basic', components)
 }

@@ -120,8 +120,91 @@ export function createMockApiExecutor() {
         }
       }
 
+      // ===== 页面 JSON（供 Dialog 远程加载） =====
+      case '/api/pages/productPicker': {
+        return { data: {
+          a2ui: [
+            { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
+            { surfaceUpdate: { surfaceId: 'main', components: [
+              { id: 'root', component: 'Row', props: { children: ['pickerTitle', 'pickerInput', 'pickerTable', 'pickerActions'], gap: 12 } },
+              { id: 'pickerTitle', component: 'Text', props: { text: '输入产品 ID 后点击"选择"，或从下方表格查看可用产品' } },
+              { id: 'pickerInput', component: 'TextField', props: { label: '产品 ID', value: { path: '/selectedId' }, placeholder: '如 P001' } },
+              { id: 'pickerTable', component: 'DataTable', props: {
+                columns: [
+                  { key: 'id', label: 'ID' },
+                  { key: 'name', label: '产品名' },
+                  { key: 'price', label: '单价' },
+                  { key: 'unit', label: '单位' },
+                  { key: 'status', label: '状态' },
+                ],
+                value: { path: '/products' },
+                emptyText: '暂无产品',
+              } },
+              { id: 'pickerActions', component: 'Row', props: { children: ['selectBtn', 'closePickerBtn'], gap: 8 } },
+              { id: 'selectBtn', component: 'Button', props: { label: '选择', variant: 'primary', reactionId: 'selectProduct' } },
+              { id: 'closePickerBtn', component: 'Button', props: { label: '取消', variant: 'secondary', reactionId: 'closePicker' } },
+            ] } },
+            { updateDataModel: { surfaceId: 'main', path: '/products', value: products.map(p => ({
+              id: p.id, name: p.name, price: p.price, unit: p.unit, status: p.status,
+            })) } },
+            { updateDataModel: { surfaceId: 'main', path: '/selectedId', value: '' } },
+          ],
+          logic: { reactions: [
+            {
+              id: 'selectProduct',
+              when: { field: 'selectBtn', event: 'click' },
+              then: [
+                { type: 'setValues', map: { '/parent/productId': '/selectedId' } },
+                { type: 'setValues', map: { '/parent/pickerOpen': false } },
+              ],
+            },
+            {
+              id: 'closePicker',
+              when: { field: 'closePickerBtn', event: 'click' },
+              then: [
+                { type: 'setValues', map: { '/parent/pickerOpen': false } },
+              ],
+            },
+          ] },
+        } }
+      }
+
       default:
         throw new Error(`Unknown API: ${req.url}`)
     }
+  }
+}
+
+/**
+ * 获取页面 JSON（供 Dialog 组件远程加载子页面）
+ * /api/ 路径走 mock executor，http/https 走真实 fetch
+ */
+export async function fetchPageSource(source: string): Promise<{
+  a2ui: any[]
+  logic: { reactions: any[] }
+} | null> {
+  if (source.startsWith('/api/')) {
+    const executor = createMockApiExecutor()
+    try {
+      const result = await executor({ url: source, method: 'GET' })
+      return result.data as { a2ui: any[]; logic: { reactions: any[] } }
+    } catch {
+      return null
+    }
+  }
+  if (!source.startsWith('https://')) {
+    console.error(`[fetchPageSource] Only https:// URLs are allowed, got: ${source}`)
+    return null
+  }
+  try {
+    const resp = await fetch(source)
+    if (!resp.ok) {
+      console.error(`[fetchPageSource] HTTP ${resp.status}: ${resp.statusText}`)
+      return null
+    }
+    return await resp.json()
+  } catch (err: any) {
+    console.error(`[fetchPageSource] Failed: ${err?.message || err}`)
+    return null
   }
 }
