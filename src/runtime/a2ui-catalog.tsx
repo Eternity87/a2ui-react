@@ -102,10 +102,21 @@ const variantMap: Record<string, 'default' | 'destructive' | 'outline' | 'second
   primary: 'default', secondary: 'secondary', danger: 'destructive',
 }
 
+const sizeTextMap: Record<string, string> = { xs: 'text-xs', sm: 'text-sm', base: 'text-base', lg: 'text-lg', xl: 'text-xl', '2xl': 'text-2xl' }
+
 /** Text — 纯文本展示，支持 ${/xxx} 模板插值（由 resolveProps 处理） */
-const TextImpl = createA2UIComponent<{ text?: string }>('Text', ({ text }) => (
-  <span className="text-sm">{text}</span>
-))
+const TextImpl = createA2UIComponent<{ text?: string; size?: string; color?: string; bold?: boolean; italic?: boolean }>(
+  'Text', ({ text, size, color, bold, italic }) => {
+    const cls = [
+      sizeTextMap[size ?? 'sm'] ?? 'text-sm',
+      bold ? 'font-bold' : '',
+      italic ? 'italic' : '',
+      color && !color.startsWith('#') ? color : '',
+    ].filter(Boolean).join(' ')
+    const style = color && color.startsWith('#') ? { color } : undefined
+    return <span className={cls} style={style}>{text}</span>
+  },
+)
 
 /** Row — Flexbox 水平容器，递归渲染 children */
 const RowImpl = createA2UIComponent<{ children?: string[]; gap?: number }>('Row', ({ children, gap, buildChild }) => (
@@ -128,19 +139,22 @@ const CardImpl = createA2UIComponent<{ title?: string; children?: string[] }>('C
  * TextField — 文本/数字输入
  * value 是 resolveProps 解析后的实际值，rawProps.value 保留原始 { path } 对象用于 write-back
  */
+const sizeInputMap: Record<string, string> = { sm: 'h-7 text-xs', default: 'h-9 text-sm', lg: 'h-11 text-base' }
+
 const TextFieldImpl = createA2UIComponent<{
-  label?: string; value?: any; placeholder?: string; type?: string
-}>('TextField', ({ label, value, placeholder, type, rawProps, dataContext }) => {
+  label?: string; value?: any; placeholder?: string; type?: string; size?: string; width?: string
+}>('TextField', ({ label, value, placeholder, type, size, width, rawProps, dataContext }) => {
   const isNumber = type === 'number'
   const valuePath = getBindingPath(rawProps.value)
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" style={width ? { width } : undefined}>
       {label && <label className="text-sm font-medium text-muted-foreground">{label as string}</label>}
       <Input
         type={isNumber ? 'number' : 'text'}
         value={value ?? ''}
         placeholder={placeholder as string | undefined}
+        className={sizeInputMap[size ?? 'default'] ?? sizeInputMap.default}
         onChange={e => {
           const v = isNumber ? Number((e.target as HTMLInputElement).value) : (e.target as HTMLInputElement).value
           if (valuePath) dataContext.set(valuePath, v)
@@ -155,13 +169,13 @@ const TextFieldImpl = createA2UIComponent<{
  * options 支持 DataBinding { path } 或静态数组；由 resolveProps 解析
  */
 const SelectImpl = createA2UIComponent<{
-  label?: string; value?: any; options?: any[]; placeholder?: string
-}>('Select', ({ label, value, options, placeholder, rawProps, dataContext }) => {
+  label?: string; value?: any; options?: any[]; placeholder?: string; size?: string; width?: string
+}>('Select', ({ label, value, options, placeholder, size, width, rawProps, dataContext }) => {
   const valuePath = getBindingPath(rawProps.value)
   const opts: any[] = Array.isArray(options) ? options : []
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1" style={width ? { width } : undefined}>
       {label && <label className="text-sm font-medium text-muted-foreground">{label as string}</label>}
       <Select
         value={(value as string) ?? ''}
@@ -169,7 +183,9 @@ const SelectImpl = createA2UIComponent<{
           if (valuePath) dataContext.set(valuePath, val)
         }}
       >
-        <SelectTrigger><SelectValue placeholder={placeholder as string | undefined} /></SelectTrigger>
+        <SelectTrigger className={sizeInputMap[size ?? 'default'] ?? sizeInputMap.default}>
+          <SelectValue placeholder={placeholder as string | undefined} />
+        </SelectTrigger>
         <SelectContent>
           {opts.map((opt: any) => (
             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>

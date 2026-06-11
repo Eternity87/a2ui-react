@@ -61,6 +61,8 @@ export const componentCatalog: Record<string, ComponentDef> = {
         enum: ['text', 'number'],
         description: '输入类型',
       },
+      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '输入框尺寸' },
+      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem' },
     },
   },
   Select: {
@@ -79,6 +81,8 @@ export const componentCatalog: Record<string, ComponentDef> = {
       value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态值' },
       options: { type: 'DynamicValue', description: '选项列表，支持 DataBinding { path } 或静态数组 [{ label, value }]' },
       placeholder: { type: 'string', description: '占位提示' },
+      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '选择器尺寸' },
+      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem' },
     },
   },
   Text: {
@@ -87,6 +91,10 @@ export const componentCatalog: Record<string, ComponentDef> = {
     category: 'display',
     props: {
       text: { type: 'DynamicString', required: true, description: '展示文本，支持 ${/xxx} 模板插值引用数据' },
+      size: { type: 'string', defaultValue: 'sm', enum: ['xs', 'sm', 'base', 'lg', 'xl', '2xl'], description: '字号' },
+      color: { type: 'string', defaultValue: '', description: '文字颜色，Tailwind class (如 text-red-500) 或 hex (如 #ff0000)' },
+      bold: { type: 'boolean', defaultValue: false, description: '是否加粗' },
+      italic: { type: 'boolean', defaultValue: false, description: '是否斜体' },
     },
   },
   Button: {

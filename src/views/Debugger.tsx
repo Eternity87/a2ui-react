@@ -123,7 +123,7 @@ export function Debugger() {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [paletteFilter, setPaletteFilter] = useState('')
   const [dragSource, setDragSource] = useState<{ type: 'palette'; componentType: string } | { type: 'tree'; componentId: string } | { type: 'column'; tableId: string; colIndex: number } | null>(null)
-  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' | 'inside' } | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' | 'inside' | 'addColumn' } | null>(null)
   const [showJsonDialog, setShowJsonDialog] = useState(false)
   const [showDmDialog, setShowDmDialog] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
@@ -204,7 +204,17 @@ export function Debugger() {
     for (const [pageId, page] of Object.entries(normalized.pages)) {
       const su = page.a2ui?.find((m: any) => 'surfaceUpdate' in m)
       const comps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
+      // 为 JSON 中缺失的 prop 填入 catalog 默认值
       for (const c of comps) {
+        const def = componentCatalog[c.component as string]
+        if (def?.props) {
+          for (const [key, pd] of Object.entries(def.props)) {
+            if (!(key in (c.props ?? {})) && pd.defaultValue !== undefined) {
+              if (!c.props) c.props = {}
+              c.props[key] = pd.defaultValue
+            }
+          }
+        }
         const m = (c.id as string).match(/(\d+)$/)
         if (m) maxN = Math.max(maxN, parseInt(m[1]))
       }
@@ -362,7 +372,8 @@ export function Debugger() {
   }
 
   function deleteComponent() {
-    if (!selectedId || isColumnSelected) return
+    if (!selectedId) return
+    if (isColumnSelected) { deleteColumn(); return }
     const id = selectedId
     const toDelete = collectDescendants(compMap, id)
     setComponents(prev => {
@@ -400,6 +411,34 @@ export function Debugger() {
     })
   }
 
+  // ===== palette → DataTable 列映射 =====
+
+  const COLUMN_ELIGIBLE: Record<string, { cellType: string; defaultLabel: string }> = {
+    Text: { cellType: 'text', defaultLabel: '文本列' },
+    TextField: { cellType: 'input', defaultLabel: '输入列' },
+    Select: { cellType: 'select', defaultLabel: '选择列' },
+  }
+
+  function addColumnToTable(tableId: string, componentType: string, insertIndex?: number) {
+    const mapping = COLUMN_ELIGIBLE[componentType]
+    if (!mapping) return
+    setComponents(prev => prev.map(c => {
+      if (c.id !== tableId) return c
+      const cols = [...(c.props.columns || [])]
+      const newCol = {
+        key: `col_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}`,
+        label: mapping.defaultLabel,
+        cellType: mapping.cellType,
+      }
+      if (insertIndex !== undefined) {
+        cols.splice(insertIndex, 0, newCol)
+      } else {
+        cols.push(newCol)
+      }
+      return { ...c, props: { ...c.props, columns: cols } }
+    }))
+  }
+
   // ===== 拖拽 =====
 
   function onPaletteDragStart(e: React.DragEvent, componentType: string) {
@@ -421,13 +460,26 @@ export function Debugger() {
       if (collectDescendants(compMap, dragSource.componentId).has(targetId)) return
     }
     e.preventDefault()
+    const targetComp = compMap.get(targetId)
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
+
+    // palette eligible → DataTable 下部 zone → 作为列加入
+    if (
+      dragSource.type === 'palette' &&
+      targetComp?.component === 'DataTable' &&
+      COLUMN_ELIGIBLE[dragSource.componentType] &&
+      y > h * 0.65
+    ) {
+      setDropIndicator({ targetId, position: 'addColumn' })
+      return
+    }
+
     let position: 'before' | 'after' | 'inside'
     if (y < h * 0.3) position = 'before'
     else if (y > h * 0.7) position = 'after'
-    else if (canHaveChildren(compMap.get(targetId))) position = 'inside'
+    else if (canHaveChildren(targetComp)) position = 'inside'
     else position = y < h * 0.5 ? 'before' : 'after'
     setDropIndicator({ targetId, position })
   }
@@ -436,6 +488,14 @@ export function Debugger() {
     e.preventDefault()
     e.stopPropagation()
     if (!dragSource || !dropIndicator) return
+
+    if (dropIndicator.position === 'addColumn' && dragSource.type === 'palette') {
+      addColumnToTable(targetId, dragSource.componentType)
+      setDragSource(null)
+      setDropIndicator(null)
+      return
+    }
+
     if (dragSource.type === 'palette') {
       const newId = generateId(dragSource.componentType)
       const def = componentCatalog[dragSource.componentType]
@@ -483,10 +543,14 @@ export function Debugger() {
 
   function onColumnDragOver(e: React.DragEvent, virtualId: string) {
     if (!dragSource) return
-    // 仅处理同表列拖拽，其他源类型忽略列目标
-    if (dragSource.type !== 'column') return
-    const [tableId] = virtualId.split('$col$')
-    if (tableId !== dragSource.tableId) return
+    if (dragSource.type === 'column') {
+      const [tableId] = virtualId.split('$col$')
+      if (tableId !== dragSource.tableId) return
+    } else if (dragSource.type === 'palette' && COLUMN_ELIGIBLE[dragSource.componentType]) {
+      // palette eligible → 允许拖到列节点上
+    } else {
+      return
+    }
     e.preventDefault()
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -499,22 +563,25 @@ export function Debugger() {
     e.stopPropagation()
     if (!dragSource || !dropIndicator) return
 
-    if (dragSource.type === 'column') {
-      const [tableId, colIdxStr] = virtualId.split('$col$')
-      const targetIndex = parseInt(colIdxStr)
-      if (isNaN(targetIndex)) return
+    const [tableId, colIdxStr] = virtualId.split('$col$')
+    const targetIndex = parseInt(colIdxStr)
+    if (isNaN(targetIndex)) return
 
+    if (dragSource.type === 'column') {
       setComponents(prev => prev.map(c => {
         if (c.id !== tableId) return c
         const cols = [...c.props.columns]
         const [moved] = cols.splice(dragSource.colIndex, 1)
-        // 移除后重新计算目标位置
         let insertAt = targetIndex
         if (dragSource.colIndex < targetIndex) insertAt--
         if (dropIndicator.position === 'after') insertAt++
         cols.splice(insertAt, 0, moved)
         return { ...c, props: { ...c.props, columns: cols } }
       }))
+    } else if (dragSource.type === 'palette') {
+      let insertIndex = targetIndex
+      if (dropIndicator.position === 'after') insertIndex++
+      addColumnToTable(tableId, dragSource.componentType, insertIndex)
     }
 
     setDragSource(null)
@@ -671,6 +738,21 @@ export function Debugger() {
     e.target.value = ''
   }
 
+  // ===== Props 值展示 =====
+
+  /** 将 DataBinding { path } 格式化为可读字符串，普通值原样返回 */
+  function formatPropValue(v: any): string {
+    if (typeof v === 'object' && v !== null && 'path' in v) return v.path as string
+    return v ?? ''
+  }
+
+  /** 将编辑器输入的字符串解析为存储格式：/ 开头 → DataBinding，否则 → 普通值 */
+  function parsePropInput(raw: string): any {
+    const trimmed = raw.trim()
+    if (trimmed.startsWith('/')) return { path: trimmed }
+    return trimmed
+  }
+
   // ===== Props 元数据 =====
 
   const selectedPropsMeta = useMemo(() => {
@@ -777,7 +859,7 @@ export function Debugger() {
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
           <Button size="sm" variant="outline" onClick={openJsonDialog}>显示 JSON</Button>
           <Button size="sm" variant="outline" onClick={openDmDialog}>DataModel</Button>
-          <Button size="sm" variant="destructive" disabled={!selectedId || isColumnSelected} onClick={deleteComponent}>删除</Button>
+          <Button size="sm" variant="destructive" disabled={!selectedId} onClick={deleteComponent}>删除</Button>
         </div>
         <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
           <div className="text-xs text-gray-400 mb-2 uppercase">实时渲染预览 — {currentEditPage}</div>
@@ -835,7 +917,6 @@ export function Debugger() {
                     placeholder='例如: /data/statusOptions 或 [{"label":"..","value":".."}]' />
                 </div>
               )}
-              <Button size="sm" variant="destructive" onClick={deleteColumn}>删除此列</Button>
             </div>
           </>
         ) : selectedComponent ? (
@@ -870,15 +951,16 @@ export function Debugger() {
                       value={selectedComponent.props[prop.key] ?? 0}
                       onChange={e => updateProp(prop.key, Number(e.target.value))} />
                   ) : prop.enum ? (
-                    <Select value={selectedComponent.props[prop.key] ?? ''} onValueChange={v => updateProp(prop.key, v)}>
+                    <Select value={formatPropValue(selectedComponent.props[prop.key]) || (prop.defaultValue as string) || ''} onValueChange={v => updateProp(prop.key, v)}>
                       <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {prop.enum.map((opt: string) => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   ) : (
-                    <Input className="h-8 text-xs mt-1" value={selectedComponent.props[prop.key] ?? ''}
-                      onChange={e => updateProp(prop.key, e.target.value)} />
+                    <Input className="h-8 text-xs mt-1" value={formatPropValue(selectedComponent.props[prop.key])}
+                      onChange={e => updateProp(prop.key,
+                        /^Dynamic/.test(prop.type) ? parsePropInput(e.target.value) : e.target.value)} />
                   )}
                 </div>
               ))}
@@ -935,6 +1017,9 @@ export function Debugger() {
         .drop-line-before { top: -1px; }
         .drop-line-after { bottom: -1px; }
         .drop-highlight { position: absolute; inset: 0; background: rgba(24,144,255,0.12); border: 1.5px dashed #1890ff; border-radius: 3px; z-index: 10; pointer-events: none; }
+        .drop-add-column { position: absolute; left: 4px; right: 4px; bottom: 0; height: 28px; display: flex; align-items: center; gap: 6px; z-index: 10; pointer-events: none; }
+        .drop-add-column-bar { flex: 1; height: 2px; background: #52c41a; border-radius: 1px; }
+        .drop-add-column-text { font-size: 11px; color: #52c41a; font-weight: 500; white-space: nowrap; }
       `}</style>
     </div>
   )

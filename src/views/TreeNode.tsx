@@ -20,7 +20,7 @@ interface TreeNodeProps {
   selectedId: string | null
   collapsedIds: Set<string>
   depth: number
-  dropIndicator: { targetId: string; position: 'before' | 'after' | 'inside' } | null
+  dropIndicator: { targetId: string; position: 'before' | 'after' | 'inside' | 'addColumn' } | null
   onSelect: (id: string) => void
   onToggleCollapse: (id: string) => void
   onDragStart: (e: DragEvent, id: string) => void
@@ -79,6 +79,12 @@ export function TreeNode({
             {dropIndicator.position === 'before' && <div className="drop-line drop-line-before" />}
             {dropIndicator.position === 'after' && <div className="drop-line drop-line-after" />}
             {dropIndicator.position === 'inside' && <div className="drop-highlight" />}
+            {dropIndicator.position === 'addColumn' && (
+              <div className="drop-add-column">
+                <div className="drop-add-column-bar" />
+                <span className="drop-add-column-text">插入列</span>
+              </div>
+            )}
           </>
         )}
 
