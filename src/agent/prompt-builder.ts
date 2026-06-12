@@ -102,42 +102,60 @@ function buildExecutionModel(): string {
 // ===== 组件清单 =====
 
 function buildComponentSection(): string {
-  const rows = Object.entries(componentCatalog).map(([name, def]) => {
-    const props = Object.entries(def.props)
-      .map(([pn, pd]) => `\`${pn}\` (${pd.type}${pd.required ? ', 必填' : ''}): ${pd.description}`)
-      .join('<br>')
-    return `| ${name} | ${def.category} | ${def.description} | ${props} |`
+  const entries = Object.entries(componentCatalog)
+
+  const blocks = entries.map(([name, def]) => {
+    const propEntries = Object.entries(def.props)
+    const core = propEntries.filter(([, p]) => (p.tier ?? 'common') === 'core')
+    const common = propEntries.filter(([, p]) => (p.tier ?? 'common') === 'common')
+    const styling = propEntries.filter(([, p]) => p.tier === 'styling')
+
+    const fmtProp = (pn: string, pd: typeof def.props[string]) => {
+      const req = pd.required ? '必填, ' : ''
+      const enums = pd.enum ? `=${pd.defaultValue ?? pd.enum[0]}` : ''
+      const dv = pd.defaultValue && !pd.enum ? ` (默认: ${pd.defaultValue})` : ''
+      if (pd.enum) return `\`${pn}\`(${pd.type})${enums}`
+      return `\`${pn}\`(${pd.type}${req ? ', ' + req : ''})${dv}: ${pd.description}`
+    }
+
+    const lines: string[] = []
+    lines.push(`### ${name} — ${def.description} [${def.category}]`)
+    if (core.length > 0) {
+      lines.push(`  **${def.category === 'layout' ? '结构' : def.category === 'input' ? '数据' : '功能'}:** ${core.map(([pn, pd]) => fmtProp(pn, pd)).join('; ')}`)
+    }
+    if (common.length > 0) {
+      lines.push(`  **其他:** ${common.map(([pn, pd]) => fmtProp(pn, pd)).join('; ')}`)
+    }
+    if (styling.length > 0) {
+      lines.push(`  **样式:** ${styling.map(([pn, pd]) => fmtProp(pn, pd)).join(', ')}`)
+    }
+    return lines.join('\n')
   })
 
   return `
 ## 可用组件
 
-| 组件 | 类别 | 用途 | Props |
-|------|------|------|-------|
-${rows.join('\n')}
+${blocks.join('\n\n')}
 
 **组件事件:**
 
-| 组件 | 事件 | when.event | 触发时机 | 传参 |
-|------|------|-----------|---------|------|
-| TextField | change | change | 输入值变化 | field: 组件 value 路径, value: 新值 |
-| TextField | blur | blur | 失去焦点 | field: 组件 value 路径, value: 当前值 |
-| Select | change | change | 选中项变化 | field: 组件 value 路径, value: 选中值 |
-| Button | click | click | 点击按钮 | reactionId: 绑定 Reaction ID |
-| (页面) | init | init | 页面渲染完成后自动执行一次 | 无 |
+| 组件 | 事件 | when.event | 触发时机 |
+|------|------|-----------|---------|
+| TextField | change | change | 输入值变化 |
+| TextField | blur | blur | 失去焦点 |
+| Select | change | change | 选中项变化 |
+| Button | click | click | 点击按钮 |
+| (页面) | init | init | 页面渲染完成后自动执行一次 |
 
-**组件使用规则（重要）:**
-- surfaceUpdate 的 components 数组中，引用组件用字段名 "component"（不是 "type"）: { "id": "...", "component": "Button", "props": {...} }
-- 上面组件清单表格中每行的 type 是 Catalog 元数据中的组件标识，与 surfaceUpdate 中 "component" 字段的取值相同（例如都是 Button、TextField）
-- Row/Card 的 children 是子组件 ID 数组，引用 surfaceUpdate 中其他组件的 id
-- TextField/Select 的动态值使用 DataBinding 格式: { "path": "/productCategory" }
-- Select 的 options 使用 DataBinding 格式: { "path": "/categoryOptions" }，静态选项直接写数组
+**组件使用规则:**
+- surfaceUpdate 中字段名是 "component" 不是 "type"
+- Row/Card/Button/DataTable 是**可见组件**，id 出现在 children 中会被渲染
+- 动态值使用 DataBinding: { "path": "/字段名" }；静态选项直接填数组 [{ "label":"..", "value":".." }]
 - Text 的 text 支持 \${/xxx} 模板插值: "单价: \${/unitPrice} 元"
-- Button 的 reactionId 指向一个 event 为 click 的 Reaction ID
-- DataTable 的 value 使用 DataBinding 格式: { "path": "/orders" }
-- **静态下拉选项（重要）**: 如果 Select 的选项是固定不变的（如产品大类只有"电子产品"和"家具"），必须通过 updateDataModel 消息以 { label, value } 格式预填完整列表。例如: "categoryOptions": [{ "label": "电子产品", "value": "ELECTRONICS" }, { "label": "家具", "value": "FURNITURE" }]。如果选项需要通过 API 动态查询，则初始化为空数组 []，由 init 事件或上级联动 Reaction 填充
-- 字段默认值: 数值型填 0 或 1（如 quantity: 1），文本型填 ""，不要混用类型
-`
+- Button 的 reactionId 指向 event 为 click 的 Reaction.id
+- Select 若选项固定，通过 updateDataModel 预填 [{ label, value }]；若动态，初始化为空数组由 init 填充
+- DataTable 的 columns 是 [{ key, label, cellType? }] 数组；value 用 DataBinding 指向行数据数组
+- 默认值: 数值填数字（如 quantity: 1），文本填 ""`
 }
 
 // ===== Action 清单 =====

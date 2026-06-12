@@ -156,14 +156,40 @@ function validateOutput(data: any): AgentResult {
   if (!data || typeof data !== 'object') {
     throw new Error('Agent 输出不是有效的 JSON 对象')
   }
+
+  // 多页面格式 → 提取第一页
+  if (data.pages && typeof data.pages === 'object') {
+    const pageIds = Object.keys(data.pages)
+    if (pageIds.length === 0) throw new Error('pages 对象为空')
+    const firstPage = data.pages[pageIds[0]]
+    if (!firstPage || !Array.isArray(firstPage.a2ui)) {
+      throw new Error(`页面 "${pageIds[0]}" 缺少 a2ui 数组`)
+    }
+    if (!firstPage.logic || !Array.isArray(firstPage.logic.reactions)) {
+      throw new Error(`页面 "${pageIds[0]}" 缺少 logic.reactions 数组`)
+    }
+    const firstMsg = firstPage.a2ui[0]
+    if (!firstMsg || !('beginRendering' in firstMsg)) {
+      console.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
+      firstPage.a2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...firstPage.a2ui]
+    }
+    // 合并 shared.dataModel 到第一页的 updateDataModel 消息末尾
+    if (data.shared?.dataModel) {
+      for (const [key, value] of Object.entries(data.shared.dataModel)) {
+        firstPage.a2ui.push({ updateDataModel: { surfaceId: 'main', path: `/${key}`, value } })
+      }
+    }
+    return { a2ui: firstPage.a2ui, logic: firstPage.logic }
+  }
+
+  // 单页面格式
   if (!Array.isArray(data.a2ui)) {
-    throw new Error('缺少 a2ui 数组')
+    throw new Error('缺少 a2ui 数组（Agent 可能输出了非 JSON 内容）')
   }
   if (!data.logic || !Array.isArray(data.logic.reactions)) {
     throw new Error('缺少 logic.reactions 数组')
   }
 
-  // 校验消息顺序
   const firstMsg = data.a2ui[0]
   if (!firstMsg || !('beginRendering' in firstMsg)) {
     console.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
@@ -171,6 +197,18 @@ function validateOutput(data: any): AgentResult {
   }
 
   return { a2ui: data.a2ui, logic: data.logic }
+}
+
+// ===== 保存到 test.json（非 mock 模式） =====
+
+async function saveToTestJson(data: any) {
+  try {
+    await fetch('/api/save-test-json', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+  } catch { /* 保存失败不影响主流程 */ }
 }
 
 // ===== 主入口 =====
@@ -201,6 +239,7 @@ export async function generatePage(
   }
 
   const parsed = extractJson(raw)
+  saveToTestJson(parsed)
   return validateOutput(parsed)
 }
 
@@ -231,5 +270,6 @@ export async function generatePageWithExample(
   }
 
   const parsed = extractJson(raw)
+  saveToTestJson(parsed)
   return validateOutput(parsed)
 }

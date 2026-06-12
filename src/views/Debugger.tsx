@@ -50,6 +50,52 @@ import { basicSetup } from 'codemirror'
 
 // ===== 工具 =====
 
+/** v0.8 组件类型名 → v0.9 映射 */
+const V08_TYPE_MAP: Record<string, string> = {
+  Text: 'Text', Row: 'Row', Column: 'Row', Card: 'Card',
+  Button: 'Button', TextField: 'TextField', Select: 'Select',
+  DataTable: 'DataTable', Modal: 'Dialog',
+}
+
+/** 将 v0.8 组件格式转为 v0.9 平级格式 */
+function normalizeV08Components(comps: any[]): any[] {
+  return comps.map(c => {
+    if (typeof c.component !== 'object' || !c.component) return c // 非 v0.8，直接返回
+    const [typeName, v08Props] = Object.entries(c.component)[0] as [string, any]
+    const v09Type = V08_TYPE_MAP[typeName]
+    if (!v09Type) { console.warn(`[loadJson] Unknown v0.8 type: ${typeName}`); return c }
+    const props: Record<string, any> = {}
+    for (const [key, value] of Object.entries(v08Props ?? {})) {
+      if (value === undefined || value === null) continue
+      if (typeof value === 'object' && value !== null) {
+        if ('literalString' in value) props[key] = value.literalString
+        else if ('literalNumber' in value) props[key] = value.literalNumber
+        else if ('literalBoolean' in value) props[key] = value.literalBoolean
+        else if ('path' in value) props[key] = { path: value.path }
+        else if ('name' in value && !('event' in value) && !('surfaceId' in value)) {
+          // v0.8 action: { name, context: [{ key, value }] }
+          const ctx: Record<string, any> = {}
+          if (Array.isArray(value.context)) {
+            for (const item of value.context) {
+              if (item.key) ctx[item.key] = typeof item.value === 'object' && 'literalString' in item.value
+                ? item.value.literalString : item.value
+            }
+          }
+          props[key] = { event: { name: value.name, context: ctx } }
+        } else if (key === 'child' && 'literalString' in value) {
+          // v0.8 child: { literalString: "id" } → v0.9 children: ["id"]
+          props.children = [value.literalString]
+        } else {
+          props[key] = value
+        }
+      } else {
+        props[key] = value
+      }
+    }
+    return { id: c.id, component: v09Type, ...props }
+  })
+}
+
 /** 收集组件及其所有后代，删除时确定需要移除的 ID 集合 */
 function collectDescendants(compMap: Map<string, any>, id: string, set = new Set<string>()): Set<string> {
   set.add(id)
@@ -203,7 +249,17 @@ export function Debugger() {
 
     for (const [pageId, page] of Object.entries(normalized.pages)) {
       const su = page.a2ui?.find((m: any) => 'surfaceUpdate' in m)
-      const comps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
+      const rawComps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
+      const comps = normalizeV08Components(rawComps) // v0.8 → v0.9 平级格式
+      // 归一化：v0.9 平级 props → legacy 嵌套 props
+      for (const c of comps) {
+        if (!c.props) {
+          const { id, component, ...rest } = c
+          c.props = rest
+          // 保留 id 和 component，删除已移入 props 的平级属性
+          for (const k of Object.keys(rest)) delete c[k]
+        }
+      }
       // 为 JSON 中缺失的 prop 填入 catalog 默认值
       for (const c of comps) {
         const def = componentCatalog[c.component as string]

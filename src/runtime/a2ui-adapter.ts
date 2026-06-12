@@ -106,12 +106,11 @@ export function legacyToV09(
     }
 
     if (msg.surfaceUpdate) {
-      // 扁平化：将嵌套的 props 展开到组件顶层
-      let comps = msg.surfaceUpdate.components.map(c => ({
-        id: c.id,
-        component: c.component,
-        ...(c.props || {}),
-      }))
+      // 兼容两种格式：legacy (props 嵌套) 和 v0.9 (props 平级)
+      let comps = msg.surfaceUpdate.components.map(c => {
+        const { props, ...rest } = c
+        return { ...rest, ...(props || {}) }
+      })
       // A2uiSurface 要求必须有 id="root" 的根组件，自动补全
       comps = ensureRootComponent(comps)
       result.push({

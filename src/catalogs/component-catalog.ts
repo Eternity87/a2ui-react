@@ -13,6 +13,7 @@ export interface ComponentDef {
     description: string
     defaultValue?: unknown
     enum?: string[]
+    tier?: 'core' | 'common' | 'styling'
   }>
 }
 
@@ -22,8 +23,8 @@ export const componentCatalog: Record<string, ComponentDef> = {
     description: '水平弹性布局容器',
     category: 'layout',
     props: {
-      children: { type: 'string[]', required: true, description: '子组件 ID 列表' },
-      gap: { type: 'number', defaultValue: 8, description: '间距(px)' },
+      children: { type: 'string[]', required: true, description: '子组件 ID 列表', tier: 'core' },
+      gap: { type: 'number', defaultValue: 8, description: '间距(px)', tier: 'styling' },
     },
   },
   Card: {
@@ -31,8 +32,8 @@ export const componentCatalog: Record<string, ComponentDef> = {
     description: '卡片容器，带标题和阴影',
     category: 'layout',
     props: {
-      children: { type: 'string[]', required: true, description: '子组件 ID 列表' },
-      title: { type: 'string', description: '卡片标题' },
+      children: { type: 'string[]', required: true, description: '子组件 ID 列表', tier: 'core' },
+      title: { type: 'string', description: '卡片标题', tier: 'common' },
     },
   },
   TextField: {
@@ -52,17 +53,15 @@ export const componentCatalog: Record<string, ComponentDef> = {
       },
     },
     props: {
-      label: { type: 'string', required: true, description: '标签' },
-      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态字符串' },
-      placeholder: { type: 'string', description: '占位提示文字' },
+      label: { type: 'string', required: true, description: '标签', tier: 'core' },
+      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态字符串', tier: 'core' },
+      placeholder: { type: 'string', description: '占位提示文字', tier: 'common' },
       type: {
-        type: 'string',
-        defaultValue: 'text',
-        enum: ['text', 'number'],
-        description: '输入类型',
+        type: 'string', defaultValue: 'text', enum: ['text', 'number'],
+        description: '输入类型', tier: 'common',
       },
-      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '输入框尺寸' },
-      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem' },
+      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '输入框尺寸', tier: 'styling' },
+      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem', tier: 'styling' },
     },
   },
   Select: {
@@ -77,12 +76,12 @@ export const componentCatalog: Record<string, ComponentDef> = {
       },
     },
     props: {
-      label: { type: 'string', required: true, description: '标签' },
-      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态值' },
-      options: { type: 'DynamicValue', description: '选项列表，支持 DataBinding { path } 或静态数组 [{ label, value }]' },
-      placeholder: { type: 'string', description: '占位提示' },
-      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '选择器尺寸' },
-      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem' },
+      label: { type: 'string', required: true, description: '标签', tier: 'core' },
+      value: { type: 'DynamicString', required: true, description: '绑定的值，支持 DataBinding { path } 或静态值', tier: 'core' },
+      options: { type: 'DynamicValue', description: '选项列表，支持 DataBinding { path } 或静态数组 [{ label, value }]', tier: 'core' },
+      placeholder: { type: 'string', description: '占位提示', tier: 'common' },
+      size: { type: 'string', defaultValue: 'default', enum: ['sm', 'default', 'lg'], description: '选择器尺寸', tier: 'styling' },
+      width: { type: 'string', defaultValue: '', description: '宽度 CSS 值，如 200px / 100% / 20rem', tier: 'styling' },
     },
   },
   Text: {
@@ -90,11 +89,11 @@ export const componentCatalog: Record<string, ComponentDef> = {
     description: '文本展示，支持 ${/xxx} 模板插值（ExpressionParser）',
     category: 'display',
     props: {
-      text: { type: 'DynamicString', required: true, description: '展示文本，支持 ${/xxx} 模板插值引用数据' },
-      size: { type: 'string', defaultValue: 'sm', enum: ['xs', 'sm', 'base', 'lg', 'xl', '2xl'], description: '字号' },
-      color: { type: 'string', defaultValue: '', description: '文字颜色，Tailwind class (如 text-red-500) 或 hex (如 #ff0000)' },
-      bold: { type: 'boolean', defaultValue: false, description: '是否加粗' },
-      italic: { type: 'boolean', defaultValue: false, description: '是否斜体' },
+      text: { type: 'DynamicString', required: true, description: '展示文本，支持 ${/xxx} 模板插值引用数据', tier: 'core' },
+      size: { type: 'string', defaultValue: 'sm', enum: ['xs', 'sm', 'base', 'lg', 'xl', '2xl'], description: '字号', tier: 'styling' },
+      color: { type: 'string', defaultValue: '', description: '文字颜色，Tailwind class (如 text-red-500) 或 hex (如 #ff0000)', tier: 'styling' },
+      bold: { type: 'boolean', defaultValue: false, description: '是否加粗', tier: 'styling' },
+      italic: { type: 'boolean', defaultValue: false, description: '是否斜体', tier: 'styling' },
     },
   },
   Button: {
@@ -109,15 +108,13 @@ export const componentCatalog: Record<string, ComponentDef> = {
       },
     },
     props: {
-      label: { type: 'string', required: true, description: '按钮文字' },
+      label: { type: 'string', required: true, description: '按钮文字', tier: 'core' },
       variant: {
-        type: 'string',
-        defaultValue: 'primary',
-        enum: ['primary', 'secondary', 'danger'],
-        description: '按钮样式变体',
+        type: 'string', defaultValue: 'primary', enum: ['primary', 'secondary', 'danger'],
+        description: '按钮样式变体', tier: 'styling',
       },
-      reactionId: { type: 'string', description: '点击时触发的 Reaction ID' },
-      disabled: { type: 'boolean', defaultValue: false, description: '是否禁用' },
+      reactionId: { type: 'string', description: '点击时触发的 Reaction ID', tier: 'common' },
+      disabled: { type: 'boolean', defaultValue: false, description: '是否禁用', tier: 'common' },
     },
   },
   DataTable: {
@@ -125,9 +122,9 @@ export const componentCatalog: Record<string, ComponentDef> = {
     description: '数据表格，支持列定义、动态行数据和可编辑单元格',
     category: 'display',
     props: {
-      columns: { type: 'array', required: true, description: '列定义数组 [{ key, label, cellType?, cellProps? }]。cellType 可选: text(默认)/input/number/select，cellProps 透传给底层组件' },
-      value: { type: 'DynamicValue', required: true, description: '行数据数组的 DataBinding 路径，如 { "path": "/orders" }' },
-      emptyText: { type: 'string', defaultValue: '暂无数据', description: '无数据时展示的提示文字' },
+      columns: { type: 'array', required: true, description: '列定义数组 [{ key, label, cellType?, cellProps? }]。cellType 可选: text(默认)/input/number/select', tier: 'core' },
+      value: { type: 'DynamicValue', required: true, description: '行数据数组的 DataBinding 路径，如 { "path": "/orders" }', tier: 'core' },
+      emptyText: { type: 'string', defaultValue: '暂无数据', description: '无数据时展示的提示文字', tier: 'common' },
     },
   },
   Dialog: {
@@ -135,10 +132,10 @@ export const componentCatalog: Record<string, ComponentDef> = {
     description: '弹窗容器，内部渲染独立 A2UI 子 Surface（独立 DataModel + Reactions），支持多实例隔离',
     category: 'layout',
     props: {
-      open: { type: 'DynamicBoolean', required: true, description: '控制弹窗显隐的 DataBinding { path }，值为 true 时打开' },
-      title: { type: 'string', description: '弹窗标题' },
-      source: { type: 'string', required: true, description: '子页面来源：本地 children key（如 "confirmDialog"）或远程 URL（如 "/api/pages/productPicker"）' },
-      width: { type: 'string', defaultValue: 'max-w-lg', description: '弹窗宽度 CSS class（如 max-w-lg / max-w-2xl / max-w-4xl）' },
+      open: { type: 'DynamicBoolean', required: true, description: '控制弹窗显隐的 DataBinding { path }，值为 true 时打开', tier: 'core' },
+      title: { type: 'string', description: '弹窗标题', tier: 'common' },
+      source: { type: 'string', required: true, description: '子页面来源：本地 children key（如 "confirmDialog"）或远程 URL', tier: 'core' },
+      width: { type: 'string', defaultValue: 'max-w-lg', description: '弹窗宽度 CSS class（如 max-w-lg / max-w-2xl / max-w-4xl）', tier: 'styling' },
     },
   },
 } as const
