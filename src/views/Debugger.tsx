@@ -179,6 +179,25 @@ export function Debugger() {
     a2ui.setToastHandler((msg, type = 'info') => setToast({ msg, type }))
     return () => a2ui.setToastHandler(console.error)
   }, [a2ui.setToastHandler])
+
+  const categoryGroups = useMemo(() => {
+    const labelMap: Record<string, string> = {
+      layout: '布局', input: '输入', display: '展示', action: '操作', chart: '图表',
+    }
+    const order = ['layout', 'input', 'display', 'action', 'chart']
+    const entries = Object.entries(componentCatalog)
+      .filter(([name]) => name.toLowerCase().includes(paletteFilter.toLowerCase()))
+    const map = new Map<string, [string, ComponentDef][]>()
+    for (const entry of entries) {
+      const cat = entry[1].category
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat)!.push(entry)
+    }
+    return order
+      .filter(cat => map.has(cat))
+      .map(cat => ({ category: cat, label: labelMap[cat] ?? cat, items: map.get(cat)! }))
+  }, [paletteFilter])
+
   const idCounter = useRef(1)
 
   // ---- 引擎与数据 ----
@@ -207,6 +226,25 @@ export function Debugger() {
 
   // ===== 同步：components[] → SurfaceModel =====
 
+  /** 将当前组件状态同步到 SurfaceModel */
+  function syncComponents(processor: any, surface: any) {
+    const v09Comps = componentsRef.current.map(c => ({
+      id: c.id,
+      component: c.component,
+      ...c.props,
+    }))
+    const finalComps = ensureRootComponent(v09Comps)
+    try {
+      processor.processMessages([{
+        version: 'v0.9',
+        updateComponents: { surfaceId: surface.id, components: finalComps },
+      }] as any)
+      setRenderKey(k => k + 1)
+    } catch (err: any) {
+      console.warn('[Sync] 同步组件失败:', err?.message || err)
+    }
+  }
+
   const processorRef = useRef(a2ui?.processor)
   processorRef.current = a2ui?.processor
   const componentsRef = useRef(components)
@@ -222,18 +260,18 @@ export function Debugger() {
       const processor = processorRef.current
       if (!processor) return
       const pageId = editPageRef.current
-      const surface = a2ui.getSurface(pageId)
-      if (!surface) return
-      const v09Comps = componentsRef.current.map(c => ({
-        id: c.id,
-        component: c.component,
-        ...c.props,
-      }))
-      const finalComps = ensureRootComponent(v09Comps)
-      processor.processMessages([{
-        updateComponents: { surfaceId: surface.id, components: finalComps },
-      }] as any)
-      setRenderKey(k => k + 1)
+      // 使用 processor.model 直接查找，确保与 processMessages 内部使用同一数据源
+      const surface = (processor as any).model?.getSurface(pageId) ?? a2ui.getSurface(pageId)
+      if (!surface) {
+        // surface 不存在（可能在页面重载中）→ 延迟重试
+        syncTimerRef.current = setTimeout(() => {
+          const retrySurface = (processor as any).model?.getSurface(pageId) ?? a2ui.getSurface(pageId)
+          if (!retrySurface) return
+          syncComponents(processor, retrySurface)
+        }, 300)
+        return
+      }
+      syncComponents(processor, surface)
     }, 150)
     return () => {
       if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
@@ -830,17 +868,24 @@ export function Debugger() {
           <div className="text-sm font-semibold mb-2">组件面板</div>
           <Input value={paletteFilter} onChange={e => setPaletteFilter(e.target.value)}
             placeholder="搜索组件..." className="h-8 text-xs" />
-          <div className="flex flex-wrap gap-1 mt-2 max-h-[180px] overflow-y-auto">
-            {Object.entries(componentCatalog)
-              .filter(([name]) => name.toLowerCase().includes(paletteFilter.toLowerCase()))
-              .map(([name, def]) => (
-                <div key={name}
-                  className="flex items-center gap-1 px-2 py-1 border rounded text-xs cursor-grab hover:border-blue-500 hover:bg-blue-50 active:cursor-grabbing"
-                  draggable
-                  onDragStart={e => onPaletteDragStart(e, name)}
-                  onDragEnd={onDragEnd}
-                ><span className="font-medium">{name}</span></div>
-              ))}
+          <div className="mt-2 max-h-[320px] overflow-y-auto space-y-2">
+            {categoryGroups.map(group => (
+              <div key={group.category}>
+                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-1 mb-1">
+                  {group.label}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {group.items.map(([name]) => (
+                    <div key={name}
+                      className="flex items-center gap-1 px-2 py-1 border rounded text-xs cursor-grab hover:border-blue-500 hover:bg-blue-50 active:cursor-grabbing"
+                      draggable
+                      onDragStart={e => onPaletteDragStart(e, name)}
+                      onDragEnd={onDragEnd}
+                    ><span className="font-medium">{name}</span></div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div className="flex-1 flex flex-col min-h-0">

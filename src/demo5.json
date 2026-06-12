@@ -1,0 +1,191 @@
+{
+  "a2ui": [
+    {
+      "beginRendering": {
+        "surfaceId": "main",
+        "catalogId": "basic"
+      }
+    },
+    {
+      "surfaceUpdate": {
+        "surfaceId": "main",
+        "components": [
+          {
+            "id": "root",
+            "component": "Row",
+            "props": {
+              "children": ["statsRow", "cardBar", "cardLine", "cardPie", "cardArea", "cardCombo", "cardScatter", "cardRadar", "cardRadial"],
+              "gap": 16
+            }
+          },
+          { "id": "statsRow", "component": "Row", "props": { "children": ["stat1", "stat2", "stat3", "stat4"], "gap": 16 } },
+          { "id": "stat1", "component": "StatCard", "props": { "label": "总销售额", "value": { "path": "/kpiSales" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiSalesTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiSalesSpark" }, "width": 280 } },
+          { "id": "stat2", "component": "StatCard", "props": { "label": "总订单量", "value": { "path": "/kpiOrders" }, "suffix": "单", "trend": { "path": "/kpiOrdersTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiOrdersSpark" }, "color": "#52c41a", "width": 280 } },
+          { "id": "stat3", "component": "StatCard", "props": { "label": "客单价", "value": { "path": "/kpiAvgPrice" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiAvgPriceTrend" }, "trendLabel": "环比", "sparklineData": { "path": "/kpiAvgPriceSpark" }, "color": "#faad14", "width": 280 } },
+          { "id": "stat4", "component": "StatCard", "props": { "label": "利润率", "value": { "path": "/kpiProfitRate" }, "suffix": "%", "trend": { "path": "/kpiProfitRateTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiProfitRateSpark" }, "color": "#722ed1", "width": 280 } },
+          { "id": "cardBar",    "component": "Card", "props": { "title": "月度销售额（柱状图）",      "children": ["barChart"], "width": 400 } },
+          { "id": "cardLine",   "component": "Card", "props": { "title": "营收趋势（折线图）",        "children": ["lineChart"], "width": 400 } },
+          { "id": "cardPie",    "component": "Card", "props": { "title": "市场份额（饼图）",          "children": ["pieChart"], "width": 400 } },
+          { "id": "cardArea",   "component": "Card", "props": { "title": "订单量趋势（面积图）",      "children": ["areaChart"], "width": 400 } },
+          { "id": "cardCombo",  "component": "Card", "props": { "title": "销售额与利润率（组合图）",  "children": ["comboChart"], "width": 400 } },
+          { "id": "cardScatter","component": "Card", "props": { "title": "广告投入 vs 销售额（散点图）","children": ["scatterChart"], "width": 400 } },
+          { "id": "cardRadar",  "component": "Card", "props": { "title": "产品综合评分（雷达图）",    "children": ["radarChart"], "width": 400 } },
+          { "id": "cardRadial", "component": "Card", "props": { "title": "季度目标完成率（径向图）",  "children": ["radialChart"], "width": 400 } },
+          {
+            "id": "barChart",
+            "component": "BarChart",
+            "props": {
+              "data": { "path": "/barData" },
+              "xField": "month", "yField": "sales",
+              "title": "2026 上半年销售额", "height": 280, "color": "#1890ff",
+              "showDataLabel": true,
+              "referenceValue": 500, "referenceLabel": "目标 500",
+              "targetValue": 500
+            }
+          },
+          {
+            "id": "lineChart",
+            "component": "LineChart",
+            "props": {
+              "data": { "path": "/lineData" },
+              "xField": "month", "yField": "revenue",
+              "title": "2026 上半年营收趋势", "height": 280, "color": "#52c41a",
+              "showDataLabel": true,
+              "referenceValue": 100, "referenceLabel": "目标 100 万"
+            }
+          },
+          {
+            "id": "pieChart",
+            "component": "PieChart",
+            "props": {
+              "data": { "path": "/pieData" },
+              "labelField": "name", "valueField": "value",
+              "title": "各品类市场占比", "height": 280,
+              "colors": "#1890ff,#52c41a,#faad14,#f5222d,#722ed1",
+              "labelFormat": "namePercent",
+              "labelPosition": "outside", "labelOffset": 10,
+              "targetValue": 20
+            }
+          },
+          {
+            "id": "areaChart",
+            "component": "AreaChart",
+            "props": {
+              "data": { "path": "/areaData" },
+              "xField": "month", "yField": "orders",
+              "title": "2026 上半年订单量", "height": 280, "color": "#faad14",
+              "showDataLabel": true,
+              "referenceValue": 400, "referenceLabel": "目标 400"
+            }
+          },
+          {
+            "id": "comboChart",
+            "component": "ComposedChart",
+            "props": {
+              "data": { "path": "/comboData" },
+              "xField": "month", "yField": "sales", "yField2": "profitRate",
+              "title": "2026 上半年销售额与利润率", "height": 280,
+              "color": "#1890ff", "color2": "#f5222d",
+              "showDataLabel": true,
+              "referenceValue": 500, "referenceLabel": "目标 500"
+            }
+          },
+          {
+            "id": "scatterChart",
+            "component": "ScatterChart",
+            "props": {
+              "data": { "path": "/scatterData" },
+              "xField": "ad", "yField": "sales",
+              "title": "广告投入(万) vs 销售额(万)", "height": 280, "color": "#722ed1",
+              "showDataLabel": true,
+              "referenceValue": 500, "referenceLabel": "目标 500"
+            }
+          },
+          {
+            "id": "radarChart",
+            "component": "RadarChart",
+            "props": {
+              "data": { "path": "/radarData" },
+              "nameKey": "metric", "dataKey": "score",
+              "title": "产品综合评分", "height": 280, "color": "#faad14", "fillOpacity": 0.25
+            }
+          },
+          {
+            "id": "radialChart",
+            "component": "RadialBarChart",
+            "props": {
+              "data": { "path": "/radialData" },
+              "nameKey": "quarter", "valueKey": "rate",
+              "title": "各季度目标完成率(%)", "height": 280,
+              "colors": "#1890ff,#52c41a,#faad14,#f5222d"
+            }
+          }
+        ]
+      }
+    },
+    { "updateDataModel": { "surfaceId": "main", "path": "/barData", "value": [
+      { "month": "1月", "sales": 420 }, { "month": "2月", "sales": 380 },
+      { "month": "3月", "sales": 510 }, { "month": "4月", "sales": 460 },
+      { "month": "5月", "sales": 590 }, { "month": "6月", "sales": 650 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/lineData", "value": [
+      { "month": "1月", "revenue": 85 }, { "month": "2月", "revenue": 72 },
+      { "month": "3月", "revenue": 98 }, { "month": "4月", "revenue": 110 },
+      { "month": "5月", "revenue": 125 }, { "month": "6月", "revenue": 148 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/pieData", "value": [
+      { "name": "电子产品", "value": 45 }, { "name": "家具家居", "value": 25 },
+      { "name": "服装配饰", "value": 15 }, { "name": "食品饮料", "value": 10 },
+      { "name": "其他", "value": 5 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/areaData", "value": [
+      { "month": "1月", "orders": 320 }, { "month": "2月", "orders": 280 },
+      { "month": "3月", "orders": 410 }, { "month": "4月", "orders": 390 },
+      { "month": "5月", "orders": 480 }, { "month": "6月", "orders": 550 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/comboData", "value": [
+      { "month": "1月", "sales": 420, "profitRate": 18 },
+      { "month": "2月", "sales": 380, "profitRate": 15 },
+      { "month": "3月", "sales": 510, "profitRate": 22 },
+      { "month": "4月", "sales": 460, "profitRate": 20 },
+      { "month": "5月", "sales": 590, "profitRate": 25 },
+      { "month": "6月", "sales": 650, "profitRate": 28 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/scatterData", "value": [
+      { "ad": 5,  "sales": 320 }, { "ad": 8,  "sales": 380 },
+      { "ad": 12, "sales": 420 }, { "ad": 15, "sales": 480 },
+      { "ad": 18, "sales": 510 }, { "ad": 22, "sales": 590 },
+      { "ad": 25, "sales": 620 }, { "ad": 30, "sales": 650 },
+      { "ad": 10, "sales": 350 }, { "ad": 20, "sales": 540 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/radarData", "value": [
+      { "metric": "性能",    "score": 85 },
+      { "metric": "稳定性",  "score": 72 },
+      { "metric": "易用性",  "score": 90 },
+      { "metric": "安全性",  "score": 78 },
+      { "metric": "扩展性",  "score": 65 },
+      { "metric": "兼容性",  "score": 88 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSales", "value": 6580 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesTrend", "value": 18.5 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesSpark", "value": [420, 380, 510, 460, 590, 650] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrders", "value": 2430 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrdersTrend", "value": 12.3 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrdersSpark", "value": [320, 280, 410, 390, 480, 550] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPrice", "value": 2.71 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPriceTrend", "value": -3.2 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPriceSpark", "value": [2.8, 2.5, 2.9, 3.1, 2.7, 2.71] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRate", "value": 22.8 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRateTrend", "value": 5.1 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRateSpark", "value": [18, 15, 22, 20, 25, 28] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/radialData", "value": [
+      { "quarter": "Q1", "rate": 82 },
+      { "quarter": "Q2", "rate": 95 },
+      { "quarter": "Q3", "rate": 70 },
+      { "quarter": "Q4", "rate": 88 }
+    ] } }
+  ],
+  "logic": {
+    "reactions": []
+  }
+}

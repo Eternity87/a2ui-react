@@ -121,7 +121,7 @@ function buildComponentSection(): string {
     const lines: string[] = []
     lines.push(`### ${name} — ${def.description} [${def.category}]`)
     if (core.length > 0) {
-      lines.push(`  **${def.category === 'layout' ? '结构' : def.category === 'input' ? '数据' : '功能'}:** ${core.map(([pn, pd]) => fmtProp(pn, pd)).join('; ')}`)
+      lines.push(`  **${def.category === 'layout' ? '结构' : def.category === 'input' || def.category === 'chart' ? '数据' : '功能'}:** ${core.map(([pn, pd]) => fmtProp(pn, pd)).join('; ')}`)
     }
     if (common.length > 0) {
       lines.push(`  **其他:** ${common.map(([pn, pd]) => fmtProp(pn, pd)).join('; ')}`)
