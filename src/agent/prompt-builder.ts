@@ -103,20 +103,36 @@ function buildExecutionModel(): string {
 
 function buildComponentSection(): string {
   const entries = Object.entries(componentCatalog)
+  const chartEntries = entries.filter(([, d]) => d.category === 'chart')
+  const otherEntries = entries.filter(([, d]) => d.category !== 'chart')
 
-  const blocks = entries.map(([name, def]) => {
-    const propEntries = Object.entries(def.props)
+  // 图表共享 prop 集合（不在单组件详情中重复列出）
+  const SHARED_CHART = new Set([
+    'width', 'height', 'fontSize', 'fontFamily', 'chartMargin',
+    'showLegend', 'showTooltip', 'showDataLabel', '_w',
+    'color', 'colors',
+  ])
+  const SHARED_REF = new Set(['referenceValue', 'referenceLabel', 'referenceColor'])
+  const SHARED_COND = new Set(['targetValue', 'colorAbove', 'colorBelow'])
+  const SHARED_AXIS = new Set(['showGrid', 'xTickAngle'])
+  const ALL_SHARED = new Set([...SHARED_CHART, ...SHARED_REF, ...SHARED_COND, ...SHARED_AXIS])
+
+  const fmtProp = (pn: string, pd: { type: string; required?: boolean; defaultValue?: unknown; enum?: string[]; description: string }) => {
+    const req = pd.required ? '必填, ' : ''
+    const enums = pd.enum ? `=${pd.defaultValue ?? pd.enum[0]}` : ''
+    const dv = pd.defaultValue && !pd.enum ? ` (默认: ${pd.defaultValue})` : ''
+    if (pd.enum) return `\`${pn}\`(${pd.type})${enums}`
+    return `\`${pn}\`(${pd.type}${req ? ', ' + req : ''})${dv}: ${pd.description}`
+  }
+
+  const buildBlock = (name: string, def: typeof componentCatalog[string], filterShared: boolean) => {
+    let propEntries = Object.entries(def.props)
+    if (filterShared) {
+      propEntries = propEntries.filter(([pn]) => !ALL_SHARED.has(pn))
+    }
     const core = propEntries.filter(([, p]) => (p.tier ?? 'common') === 'core')
     const common = propEntries.filter(([, p]) => (p.tier ?? 'common') === 'common')
     const styling = propEntries.filter(([, p]) => p.tier === 'styling')
-
-    const fmtProp = (pn: string, pd: typeof def.props[string]) => {
-      const req = pd.required ? '必填, ' : ''
-      const enums = pd.enum ? `=${pd.defaultValue ?? pd.enum[0]}` : ''
-      const dv = pd.defaultValue && !pd.enum ? ` (默认: ${pd.defaultValue})` : ''
-      if (pd.enum) return `\`${pn}\`(${pd.type})${enums}`
-      return `\`${pn}\`(${pd.type}${req ? ', ' + req : ''})${dv}: ${pd.description}`
-    }
 
     const lines: string[] = []
     lines.push(`### ${name} — ${def.description} [${def.category}]`)
@@ -130,12 +146,40 @@ function buildComponentSection(): string {
       lines.push(`  **样式:** ${styling.map(([pn, pd]) => fmtProp(pn, pd)).join(', ')}`)
     }
     return lines.join('\n')
-  })
+  }
+
+  const otherBlocks = otherEntries.map(([n, d]) => buildBlock(n, d, false))
+  const chartBlocks = chartEntries.map(([n, d]) => buildBlock(n, d, true))
+
+  // 取第一个图表组件的共享 prop 实际默认值来构建共享表
+  const firstChart = chartEntries[0]?.[1]
+  const sharedRows = (names: Set<string>, title: string) => {
+    if (!firstChart) return ''
+    const props = [...names]
+      .filter(n => n in (firstChart.props || {}))
+      .map(n => [n, firstChart.props[n]] as const)
+    if (props.length === 0) return ''
+    return `**${title}:** ${props.map(([pn, pd]) => fmtProp(pn, pd)).join(', ')}\n`
+  }
 
   return `
 ## 可用组件
 
-${blocks.join('\n\n')}
+### 图表通用配置（所有图表均支持，不再在每个图表中重复列出）
+
+${sharedRows(SHARED_CHART, '外观')}
+${sharedRows(SHARED_AXIS, '网格/坐标轴（笛卡尔图表）')}
+${sharedRows(SHARED_REF, '参考线（笛卡尔图表）')}
+${sharedRows(SHARED_COND, '条件着色（Bar/Pie/Line/Area/Composed/Scatter）')}
+> 图表独有 props 见各组件详情。
+
+### 基础组件
+
+${otherBlocks.join('\n\n')}
+
+### 图表组件
+
+${chartBlocks.join('\n\n')}
 
 **组件事件:**
 
@@ -241,9 +285,16 @@ function buildPipeSection(): string {
 | 操作符 | 用途 | 参数示例 |
 |--------|------|---------|
 | get | 从 dataModel 全局根路径取值（**不是**从 pipe 当前值读取，总是从 dataModel 根路径读取） | "/rawProducts.list" |
-| filter | 过滤数组，$ 代表当前项 | "$.status === 'active'" |
-| map | 映射数组，$ 代表当前项 | "({ label: $.name, value: $.id })" |
-| compute | 表达式计算，$value 代表当前值 | "$value * quantity" |
+| filter | 过滤数组，$ 代表当前项，可直接访问 dataModel 字段 | "$.sales >= _event.sales" |
+| map | 映射数组，$ 代表当前项，可直接访问 dataModel 字段 | "({ label: $.name, value: $.id })" |
+| compute | 表达式计算，$value 代表当前值，可直接访问 dataModel 字段 | "$value * quantity" |
+| yoy | 同比计算: (current - previous) / \|previous\| × 100，返回百分比 | { "current": "/sales", "previous": "/salesLastYear" } |
+| mom | 环比计算: (current - previous) / \|previous\| × 100，返回百分比 | { "current": "/sales", "previous": "/salesLastMonth" } |
+
+**yoy/mom 说明:**
+- current 和 previous 支持两种写法: dataModel 路径（如 "/kpiSales"）或字面量（如 500）
+- previous 为 0 时返回 0，避免除零错误
+- 返回值是百分比数值（如 18.5 表示增长 18.5%，-3.2 表示下降 3.2%）
 
 **Pipe 完整示例:**
 \`\`\`json
@@ -350,7 +401,7 @@ ${compTable}
 ${apiTable}
 
 ## Action: apiRequest/setValues/validate/toast/condition/cascade
-## Pipe: get/filter/map/compute
+## Pipe: get/filter/map/compute/yoy/mom
 ## 规则: DynamicValue { "path": "/xxx" } 引用数据, cascade 先清空再加载, when.event=change|click|init
 
 ## 需求

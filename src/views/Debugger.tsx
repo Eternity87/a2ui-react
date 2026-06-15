@@ -41,7 +41,7 @@ import { registerChildPage } from '@/runtime/page-context'
 import { TreeNode } from '@/views/TreeNode'
 import { PageSelector } from '@/views/PageSelector'
 import { A2uiSurface } from '@a2ui/react/v0_9'
-import demoDefault from '@/demo.json'
+import demoDefault from '@/demo5.json'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
@@ -170,6 +170,11 @@ export function Debugger() {
   const [paletteFilter, setPaletteFilter] = useState('')
   const [dragSource, setDragSource] = useState<{ type: 'palette'; componentType: string } | { type: 'tree'; componentId: string } | { type: 'column'; tableId: string; colIndex: number } | null>(null)
   const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' | 'inside' | 'addColumn' } | null>(null)
+  // ref 保存最新值，避免拖拽事件闭包中使用过期 state
+  const dragSourceRef = useRef(dragSource)
+  dragSourceRef.current = dragSource
+  const dropIndicatorRef = useRef(dropIndicator)
+  dropIndicatorRef.current = dropIndicator
   const [showJsonDialog, setShowJsonDialog] = useState(false)
   const [showDmDialog, setShowDmDialog] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
@@ -234,10 +239,14 @@ export function Debugger() {
       ...c.props,
     }))
     const finalComps = ensureRootComponent(v09Comps)
+    // 空组件列表时，发送仅含 root 的空树来清空渲染区
+    const compsToSend = finalComps.length === 0 && v09Comps.length === 0
+      ? [{ id: 'root', component: 'Row', children: [] }]
+      : finalComps
     try {
       processor.processMessages([{
         version: 'v0.9',
-        updateComponents: { surfaceId: surface.id, components: finalComps },
+        updateComponents: { surfaceId: surface.id, components: compsToSend },
       }] as any)
       setRenderKey(k => k + 1)
     } catch (err: any) {
@@ -254,7 +263,6 @@ export function Debugger() {
 
   const syncTimerRef = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
-    if (components.length === 0) return
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     syncTimerRef.current = setTimeout(() => {
       const processor = processorRef.current
@@ -401,6 +409,11 @@ export function Debugger() {
   useEffect(() => {
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
+        // 将点击数据写入 dataModel，供 Reaction 的 pipe 表达式通过 get /_event 访问
+        const surface = getSurfaceRef.current(currentEditPage)
+        if (action.context.clickData && surface) {
+          surface.dataModel.set('/_event', action.context.clickData)
+        }
         engineRef.current?.triggerReaction(action.context.reactionId)
       }
     })
@@ -482,6 +495,29 @@ export function Debugger() {
     setSelectedId(null)
   }
 
+  function clearPage() {
+    setPages(prev => {
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
+      return { ...prev, [currentEditPage]: { ...cur, components: [], reactions: [], initialDataModel: {} } }
+    })
+    setSelectedId(null)
+    // 同步清空 SurfaceModel 中的运行时 dataModel
+    const processor = processorRef.current
+    if (processor) {
+      const surface = (processor as any).model?.getSurface(currentEditPage) ?? a2ui.getSurface(currentEditPage)
+      if (surface) {
+        try {
+          processor.processMessages([{
+            version: 'v0.9',
+            updateDataModel: { surfaceId: surface.id, path: '/', value: {} },
+          }] as any)
+        } catch (err: any) {
+          console.warn('[Clear] 清空 dataModel 失败:', err?.message || err)
+        }
+      }
+    }
+  }
+
   /** 纯函数：在组件数组中把 id 插入到 targetId 的指定位置，返回新数组（O(depth) 仅修改受影响的父节点） */
   function insertIntoTree(
     comps: any[], id: string, targetId: string, position: 'before' | 'after' | 'inside',
@@ -494,7 +530,17 @@ export function Debugger() {
       )
     }
     const parentId = getParentId(comps, targetId)
-    if (!parentId) return comps
+    if (!parentId) {
+      // targetId 是顶层节点，直接在平级数组中重排
+      const targetIdx = comps.findIndex(c => c.id === targetId)
+      if (targetIdx === -1) return comps
+      const component = comps.find(c => c.id === id)
+      if (!component) return comps
+      const rest = comps.filter(c => c.id !== id)
+      const newTargetIdx = rest.findIndex(c => c.id === targetId)
+      const insertIdx = position === 'before' ? newTargetIdx : newTargetIdx + 1
+      return [...rest.slice(0, insertIdx), component, ...rest.slice(insertIdx)]
+    }
     return comps.map(c => {
       if (c.id !== parentId) return c
       const children = [...(c.props.children || [])]
@@ -548,10 +594,13 @@ export function Debugger() {
   }
 
   function onTreeNodeDragOver(e: React.DragEvent, targetId: string) {
-    if (!dragSource) return
-    if (dragSource.type === 'tree') {
-      if (dragSource.componentId === targetId) return
-      if (collectDescendants(compMap, dragSource.componentId).has(targetId)) return
+    const ds = dragSourceRef.current
+    if (!ds) return
+    if (ds.type === 'tree') {
+      if (ds.componentId === targetId || collectDescendants(compMap, ds.componentId).has(targetId)) {
+        if (dropIndicatorRef.current) setDropIndicator(null)
+        return
+      }
     }
     e.preventDefault()
     const targetComp = compMap.get(targetId)
@@ -561,9 +610,9 @@ export function Debugger() {
 
     // palette eligible → DataTable 下部 zone → 作为列加入
     if (
-      dragSource.type === 'palette' &&
+      ds.type === 'palette' &&
       targetComp?.component === 'DataTable' &&
-      COLUMN_ELIGIBLE[dragSource.componentType] &&
+      COLUMN_ELIGIBLE[ds.componentType] &&
       y > h * 0.65
     ) {
       setDropIndicator({ targetId, position: 'addColumn' })
@@ -581,18 +630,20 @@ export function Debugger() {
   function onTreeNodeDrop(e: React.DragEvent, targetId: string) {
     e.preventDefault()
     e.stopPropagation()
-    if (!dragSource || !dropIndicator) return
+    const ds = dragSourceRef.current
+    const di = dropIndicatorRef.current
+    if (!ds || !di) return
 
-    if (dropIndicator.position === 'addColumn' && dragSource.type === 'palette') {
-      addColumnToTable(targetId, dragSource.componentType)
+    if (di.position === 'addColumn' && ds.type === 'palette') {
+      addColumnToTable(targetId, ds.componentType)
       setDragSource(null)
       setDropIndicator(null)
       return
     }
 
-    if (dragSource.type === 'palette') {
-      const newId = generateId(dragSource.componentType)
-      const def = componentCatalog[dragSource.componentType]
+    if (ds.type === 'palette') {
+      const newId = generateId(ds.componentType)
+      const def = componentCatalog[ds.componentType]
       if (!def) return
       const props: Record<string, any> = {}
       Object.entries(def.props).forEach(([k, pd]) => {
@@ -603,13 +654,12 @@ export function Debugger() {
         else if (pd.type === 'boolean') props[k] = false
         else if (pd.type === 'array') props[k] = []
       })
-      const newComp = { id: newId, component: dragSource.componentType, props }
-      // 单次 setComponents：添加新组件 + 插入树位置
-      setComponents(prev => insertIntoTree([...prev, newComp], newId, targetId, dropIndicator.position))
+      const newComp = { id: newId, component: ds.componentType, props }
+      setComponents(prev => insertIntoTree([...prev, newComp], newId, targetId, di.position))
       setSelectedId(newId)
-    } else if (dragSource.type === 'tree') {
-      const movedId = dragSource.componentId
-      // 单次 setComponents：从旧父节点移除 + 插入新位置
+    } else if (ds.type === 'tree') {
+      const movedId = ds.componentId
+      if (movedId === targetId) { setDragSource(null); setDropIndicator(null); return }
       setComponents(prev => {
         const oldParent = getParentId(prev, movedId)
         let next = prev.map(c => {
@@ -618,7 +668,7 @@ export function Debugger() {
           }
           return { ...c, props: { ...c.props } }
         })
-        return insertIntoTree(next, movedId, targetId, dropIndicator.position)
+        return insertIntoTree(next, movedId, targetId, di.position)
       })
     }
     setDragSource(null)
@@ -626,6 +676,8 @@ export function Debugger() {
   }
 
   function onDragEnd() { setDragSource(null); setDropIndicator(null) }
+
+  function onTreeDragLeave() { if (dropIndicatorRef.current) setDropIndicator(null) }
 
   // ===== 列拖拽（DataTable columns 重排序） =====
 
@@ -636,11 +688,12 @@ export function Debugger() {
   }
 
   function onColumnDragOver(e: React.DragEvent, virtualId: string) {
-    if (!dragSource) return
-    if (dragSource.type === 'column') {
+    const ds = dragSourceRef.current
+    if (!ds) return
+    if (ds.type === 'column') {
       const [tableId] = virtualId.split('$col$')
-      if (tableId !== dragSource.tableId) return
-    } else if (dragSource.type === 'palette' && COLUMN_ELIGIBLE[dragSource.componentType]) {
+      if (tableId !== ds.tableId) return
+    } else if (ds.type === 'palette' && COLUMN_ELIGIBLE[ds.componentType]) {
       // palette eligible → 允许拖到列节点上
     } else {
       return
@@ -655,27 +708,29 @@ export function Debugger() {
   function onColumnDrop(e: React.DragEvent, virtualId: string) {
     e.preventDefault()
     e.stopPropagation()
-    if (!dragSource || !dropIndicator) return
+    const ds = dragSourceRef.current
+    const di = dropIndicatorRef.current
+    if (!ds || !di) return
 
     const [tableId, colIdxStr] = virtualId.split('$col$')
     const targetIndex = parseInt(colIdxStr)
     if (isNaN(targetIndex)) return
 
-    if (dragSource.type === 'column') {
+    if (ds.type === 'column') {
       setComponents(prev => prev.map(c => {
         if (c.id !== tableId) return c
         const cols = [...c.props.columns]
-        const [moved] = cols.splice(dragSource.colIndex, 1)
+        const [moved] = cols.splice(ds.colIndex, 1)
         let insertAt = targetIndex
-        if (dragSource.colIndex < targetIndex) insertAt--
-        if (dropIndicator.position === 'after') insertAt++
+        if (ds.colIndex < targetIndex) insertAt--
+        if (di.position === 'after') insertAt++
         cols.splice(insertAt, 0, moved)
         return { ...c, props: { ...c.props, columns: cols } }
       }))
-    } else if (dragSource.type === 'palette') {
+    } else if (ds.type === 'palette') {
       let insertIndex = targetIndex
-      if (dropIndicator.position === 'after') insertIndex++
-      addColumnToTable(tableId, dragSource.componentType, insertIndex)
+      if (di.position === 'after') insertIndex++
+      addColumnToTable(tableId, ds.componentType, insertIndex)
     }
 
     setDragSource(null)
@@ -932,7 +987,7 @@ export function Debugger() {
                   })
                 }}
                 onDragStart={onTreeNodeDragStart} onDragOver={onTreeNodeDragOver}
-                onDragLeave={() => {}} onDrop={onTreeNodeDrop} onDragEnd={onDragEnd}
+                onDragLeave={onTreeDragLeave} onDrop={onTreeNodeDrop} onDragEnd={onDragEnd}
                 onColumnDragStart={onColumnDragStart} onColumnDragOver={onColumnDragOver}
                 onColumnDrop={onColumnDrop}
               />
@@ -961,6 +1016,7 @@ export function Debugger() {
           <Button size="sm" variant="outline" onClick={openJsonDialog}>显示 JSON</Button>
           <Button size="sm" variant="outline" onClick={openDmDialog}>DataModel</Button>
           <Button size="sm" variant="destructive" disabled={!selectedId} onClick={deleteComponent}>删除</Button>
+          <Button size="sm" variant="outline" onClick={clearPage}>清空</Button>
         </div>
         <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
           <div className="text-xs text-gray-400 mb-2 uppercase">实时渲染预览 — {currentEditPage}</div>

@@ -35,6 +35,17 @@ export const componentCatalog: Record<string, ComponentDef> = {
       children: { type: 'string[]', required: true, description: '子组件 ID 列表', tier: 'core' },
       title: { type: 'string', description: '卡片标题', tier: 'common' },
       width: { type: 'string', defaultValue: '', description: '卡片宽度，如 400px / 100% / 20rem，留空则自适应', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
+    },
+  },
+  Dashboard: {
+    type: 'Dashboard',
+    description: 'BI看板 CSS Grid 网格布局容器，子组件通过 _w prop 控制占列数',
+    category: 'layout',
+    props: {
+      children: { type: 'string[]', required: true, description: '子组件 ID 列表', tier: 'core' },
+      columns: { type: 'number', defaultValue: 12, description: '栅格列数', tier: 'styling' },
+      gap: { type: 'number', defaultValue: 16, description: '卡片间距(px)', tier: 'styling' },
     },
   },
   TextField: {
@@ -126,6 +137,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       columns: { type: 'array', required: true, description: '列定义数组 [{ key, label, cellType?, cellProps? }]。cellType 可选: text(默认)/input/number/select', tier: 'core' },
       value: { type: 'DynamicValue', required: true, description: '行数据数组的 DataBinding 路径，如 { "path": "/orders" }', tier: 'core' },
       emptyText: { type: 'string', defaultValue: '暂无数据', description: '无数据时展示的提示文字', tier: 'common' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
     },
   },
   Dialog: {
@@ -143,6 +155,13 @@ export const componentCatalog: Record<string, ComponentDef> = {
     type: 'BarChart',
     description: '柱状图，支持动态数据绑定，适合分类对比场景',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击柱子时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击柱子的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       xField: { type: 'string', required: true, description: 'X 轴分类字段名', tier: 'core' },
@@ -154,6 +173,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -167,12 +187,20 @@ export const componentCatalog: Record<string, ComponentDef> = {
       targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
       colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
       colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   LineChart: {
     type: 'LineChart',
     description: '折线图，支持动态数据绑定，适合趋势展示',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击数据点时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击点的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       xField: { type: 'string', required: true, description: 'X 轴字段名', tier: 'core' },
@@ -184,6 +212,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -195,12 +224,23 @@ export const componentCatalog: Record<string, ComponentDef> = {
       referenceValue: { type: 'number', description: '参考线数值，标注 KPI 目标线', tier: 'common' },
       referenceLabel: { type: 'string', description: '参考线标签文字', tier: 'common' },
       referenceColor: { type: 'string', defaultValue: '#ff4d4f', description: '参考线颜色', tier: 'styling' },
+      targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
+      colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
+      colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   PieChart: {
     type: 'PieChart',
     description: '饼图，支持动态数据绑定，适合占比展示',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击扇区时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击扇区的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       labelField: { type: 'string', required: true, description: '扇区名称字段名', tier: 'core' },
@@ -212,6 +252,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -224,6 +265,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
       colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
       colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   AreaChart: {
@@ -241,6 +283,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -252,6 +295,9 @@ export const componentCatalog: Record<string, ComponentDef> = {
       referenceValue: { type: 'number', description: '参考线数值，标注 KPI 目标线', tier: 'common' },
       referenceLabel: { type: 'string', description: '参考线标签文字', tier: 'common' },
       referenceColor: { type: 'string', defaultValue: '#ff4d4f', description: '参考线颜色', tier: 'styling' },
+      targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
+      colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
+      colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
     },
   },
   ComposedChart: {
@@ -271,6 +317,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -279,12 +326,22 @@ export const componentCatalog: Record<string, ComponentDef> = {
       referenceValue: { type: 'number', description: '参考线数值，标注 KPI 目标线', tier: 'common' },
       referenceLabel: { type: 'string', description: '参考线标签文字', tier: 'common' },
       referenceColor: { type: 'string', defaultValue: '#ff4d4f', description: '参考线颜色', tier: 'styling' },
+      targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
+      colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
+      colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
     },
   },
   ScatterChart: {
     type: 'ScatterChart',
     description: '散点图，适合二维数据分布和相关性分析',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击散点时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击散点的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       xField: { type: 'string', required: true, description: 'X 轴字段名', tier: 'core' },
@@ -296,6 +353,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -304,6 +362,10 @@ export const componentCatalog: Record<string, ComponentDef> = {
       referenceValue: { type: 'number', description: '参考线数值，标注 KPI 目标线', tier: 'common' },
       referenceLabel: { type: 'string', description: '参考线标签文字', tier: 'common' },
       referenceColor: { type: 'string', defaultValue: '#ff4d4f', description: '参考线颜色', tier: 'styling' },
+      targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
+      colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
+      colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   RadarChart: {
@@ -323,6 +385,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -345,6 +408,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       showLegend: { type: 'boolean', defaultValue: true, description: '是否显示图例', tier: 'common' },
       showTooltip: { type: 'boolean', defaultValue: true, description: '是否显示悬浮提示', tier: 'common' },
       showDataLabel: { type: 'boolean', defaultValue: false, description: '是否在图表元素上显示数值标签', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
@@ -366,6 +430,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       height: { type: 'number', defaultValue: 150, description: '卡片高度(px)', tier: 'styling' },
       width: { type: 'string', defaultValue: '100%', description: '卡片宽度', tier: 'styling' },
       color: { type: 'string', defaultValue: '#1890ff', description: '主题色，用于数值和边框强调', tier: 'styling' },
+      _w: { type: 'number', description: '在 Dashboard 中占列数，默认占满整行', tier: 'styling' },
     },
   },
 } as const

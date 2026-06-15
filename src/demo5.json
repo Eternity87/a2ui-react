@@ -12,25 +12,25 @@
         "components": [
           {
             "id": "root",
-            "component": "Row",
+            "component": "Dashboard",
             "props": {
-              "children": ["statsRow", "cardBar", "cardLine", "cardPie", "cardArea", "cardCombo", "cardScatter", "cardRadar", "cardRadial"],
-              "gap": 16
+              "children": ["drillInfo", "stat1", "stat2", "stat3", "stat4", "cardBar", "cardLine", "cardPie", "cardArea", "cardCombo", "cardScatter", "cardRadar", "cardRadial"],
+              "columns": 12, "gap": 16
             }
           },
-          { "id": "statsRow", "component": "Row", "props": { "children": ["stat1", "stat2", "stat3", "stat4"], "gap": 16 } },
-          { "id": "stat1", "component": "StatCard", "props": { "label": "总销售额", "value": { "path": "/kpiSales" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiSalesTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiSalesSpark" }, "width": 280 } },
-          { "id": "stat2", "component": "StatCard", "props": { "label": "总订单量", "value": { "path": "/kpiOrders" }, "suffix": "单", "trend": { "path": "/kpiOrdersTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiOrdersSpark" }, "color": "#52c41a", "width": 280 } },
-          { "id": "stat3", "component": "StatCard", "props": { "label": "客单价", "value": { "path": "/kpiAvgPrice" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiAvgPriceTrend" }, "trendLabel": "环比", "sparklineData": { "path": "/kpiAvgPriceSpark" }, "color": "#faad14", "width": 280 } },
-          { "id": "stat4", "component": "StatCard", "props": { "label": "利润率", "value": { "path": "/kpiProfitRate" }, "suffix": "%", "trend": { "path": "/kpiProfitRateTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiProfitRateSpark" }, "color": "#722ed1", "width": 280 } },
-          { "id": "cardBar",    "component": "Card", "props": { "title": "月度销售额（柱状图）",      "children": ["barChart"], "width": 400 } },
-          { "id": "cardLine",   "component": "Card", "props": { "title": "营收趋势（折线图）",        "children": ["lineChart"], "width": 400 } },
-          { "id": "cardPie",    "component": "Card", "props": { "title": "市场份额（饼图）",          "children": ["pieChart"], "width": 400 } },
-          { "id": "cardArea",   "component": "Card", "props": { "title": "订单量趋势（面积图）",      "children": ["areaChart"], "width": 400 } },
-          { "id": "cardCombo",  "component": "Card", "props": { "title": "销售额与利润率（组合图）",  "children": ["comboChart"], "width": 400 } },
-          { "id": "cardScatter","component": "Card", "props": { "title": "广告投入 vs 销售额（散点图）","children": ["scatterChart"], "width": 400 } },
-          { "id": "cardRadar",  "component": "Card", "props": { "title": "产品综合评分（雷达图）",    "children": ["radarChart"], "width": 400 } },
-          { "id": "cardRadial", "component": "Card", "props": { "title": "季度目标完成率（径向图）",  "children": ["radialChart"], "width": 400 } },
+          { "id": "drillInfo", "component": "Text", "props": { "_w": 12, "text": "下钻结果: ${/drillMonth} — 销售额 ${/drillSales}", "size": "base", "color": "text-blue-500" } },
+          { "id": "stat1", "component": "StatCard", "props": { "_w": 3, "label": "总销售额", "value": { "path": "/kpiSales" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiSalesTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiSalesSpark" } } },
+          { "id": "stat2", "component": "StatCard", "props": { "_w": 3, "label": "总订单量", "value": { "path": "/kpiOrders" }, "suffix": "单", "trend": { "path": "/kpiOrdersTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiOrdersSpark" }, "color": "#52c41a" } },
+          { "id": "stat3", "component": "StatCard", "props": { "_w": 3, "label": "客单价", "value": { "path": "/kpiAvgPrice" }, "prefix": "¥", "suffix": "万", "trend": { "path": "/kpiAvgPriceTrend" }, "trendLabel": "环比", "sparklineData": { "path": "/kpiAvgPriceSpark" }, "color": "#faad14" } },
+          { "id": "stat4", "component": "StatCard", "props": { "_w": 3, "label": "利润率", "value": { "path": "/kpiProfitRate" }, "suffix": "%", "trend": { "path": "/kpiProfitRateTrend" }, "trendLabel": "同比", "sparklineData": { "path": "/kpiProfitRateSpark" }, "color": "#722ed1" } },
+          { "id": "cardBar",    "component": "Card", "props": { "_w": 6, "title": "月度销售额（柱状图）",      "children": ["barChart"] } },
+          { "id": "cardLine",   "component": "Card", "props": { "_w": 6, "title": "营收趋势（折线图）",        "children": ["lineChart"] } },
+          { "id": "cardPie",    "component": "Card", "props": { "_w": 6, "title": "市场份额（饼图）",          "children": ["pieChart"] } },
+          { "id": "cardArea",   "component": "Card", "props": { "_w": 6, "title": "订单量趋势（面积图）",      "children": ["areaChart"] } },
+          { "id": "cardCombo",  "component": "Card", "props": { "_w": 6, "title": "销售额与利润率（组合图）",  "children": ["comboChart"] } },
+          { "id": "cardScatter","component": "Card", "props": { "_w": 6, "title": "广告投入 vs 销售额（散点图）","children": ["scatterChart"] } },
+          { "id": "cardRadar",  "component": "Card", "props": { "_w": 6, "title": "产品综合评分（雷达图）",    "children": ["radarChart"] } },
+          { "id": "cardRadial", "component": "Card", "props": { "_w": 6, "title": "季度目标完成率（径向图）",  "children": ["radialChart"] } },
           {
             "id": "barChart",
             "component": "BarChart",
@@ -40,7 +40,8 @@
               "title": "2026 上半年销售额", "height": 280, "color": "#1890ff",
               "showDataLabel": true,
               "referenceValue": 500, "referenceLabel": "目标 500",
-              "targetValue": 500
+              "targetValue": 500,
+              "reactionId": "onBarClick"
             }
           },
           {
@@ -51,7 +52,8 @@
               "xField": "month", "yField": "revenue",
               "title": "2026 上半年营收趋势", "height": 280, "color": "#52c41a",
               "showDataLabel": true,
-              "referenceValue": 100, "referenceLabel": "目标 100 万"
+              "referenceValue": 100, "referenceLabel": "目标 100 万",
+              "targetValue": 100
             }
           },
           {
@@ -75,7 +77,8 @@
               "xField": "month", "yField": "orders",
               "title": "2026 上半年订单量", "height": 280, "color": "#faad14",
               "showDataLabel": true,
-              "referenceValue": 400, "referenceLabel": "目标 400"
+              "referenceValue": 400, "referenceLabel": "目标 400",
+              "targetValue": 400
             }
           },
           {
@@ -94,7 +97,7 @@
             "id": "scatterChart",
             "component": "ScatterChart",
             "props": {
-              "data": { "path": "/scatterData" },
+              "data": { "path": "/scatterFiltered" },
               "xField": "ad", "yField": "sales",
               "title": "广告投入(万) vs 销售额(万)", "height": 280, "color": "#722ed1",
               "showDataLabel": true,
@@ -167,6 +170,20 @@
       { "metric": "兼容性",  "score": 88 }
     ] } },
     { "updateDataModel": { "surfaceId": "main", "path": "/kpiSales", "value": 6580 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/_event", "value": {} } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/drillMonth", "value": "" } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/drillSales", "value": 0 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/clickMonth", "value": "" } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/clickSales", "value": 0 } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/scatterAll", "value": [
+      { "ad": 5,  "sales": 320 }, { "ad": 8,  "sales": 380 },
+      { "ad": 12, "sales": 420 }, { "ad": 15, "sales": 480 },
+      { "ad": 18, "sales": 510 }, { "ad": 22, "sales": 590 },
+      { "ad": 25, "sales": 620 }, { "ad": 30, "sales": 650 },
+      { "ad": 10, "sales": 350 }, { "ad": 20, "sales": 540 }
+    ] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/scatterFiltered", "value": [] } },
+    { "updateDataModel": { "surfaceId": "main", "path": "/salesLastYear", "value": 490 } },
     { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesTrend", "value": 18.5 } },
     { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesSpark", "value": [420, 380, 510, 460, 590, 650] } },
     { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrders", "value": 2430 } },
@@ -186,6 +203,76 @@
     ] } }
   ],
   "logic": {
-    "reactions": []
+    "reactions": [
+      {
+        "id": "initLoad",
+        "when": { "field": "/_", "event": "init" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/salesYoY": {
+                "pipe": [
+                  { "yoy": { "current": "/kpiSales", "previous": "/salesLastYear" } }
+                ]
+              },
+              "/scatterFiltered": {
+                "pipe": [{ "get": "/scatterAll" }]
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "onBarClick",
+        "when": { "field": "barChart", "event": "click" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/clickMonth": { "pipe": [{ "get": "/_event.month" }] },
+              "/clickSales": { "pipe": [{ "get": "/_event.sales" }] }
+            }
+          },
+          {
+            "type": "condition",
+            "branches": [
+              {
+                "if": "$clickMonth === $drillMonth",
+                "then": [
+                  {
+                    "type": "setValues",
+                    "map": {
+                      "/drillMonth": "",
+                      "/drillSales": 0,
+                      "/scatterFiltered": { "pipe": [{ "get": "/scatterAll" }] }
+                    }
+                  },
+                  { "type": "toast", "message": "已取消联动，散点图恢复全量", "variant": "info" }
+                ]
+              },
+              {
+                "then": [
+                  {
+                    "type": "setValues",
+                    "map": {
+                      "/drillMonth": { "pipe": [{ "get": "/_event.month" }] },
+                      "/drillSales": { "pipe": [{ "get": "/_event.sales" }] },
+                      "/scatterFiltered": {
+                        "pipe": [
+                          { "get": "/scatterAll" },
+                          { "filter": "$.sales >= _event.sales" }
+                        ]
+                      }
+                    }
+                  },
+                  { "type": "toast", "message": "联动: 散点图已过滤，点击同月取消", "variant": "success" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

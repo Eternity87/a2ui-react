@@ -72,19 +72,32 @@ export class PipeEngine {
         return this.resolvePath(p)
       case 'filter':
         return Array.isArray(current)
-          ? current.filter(item => this.eval(p, { $: item }))
+          ? current.filter(item => this.eval(p, { $: item, ...this.flatData() }))
           : []
       case 'map':
         return Array.isArray(current)
-          ? current.map((item, i) => this.eval(p, { $: item, $_index: i }))
+          ? current.map((item, i) => this.eval(p, { $: item, $_index: i, ...this.flatData() }))
           : []
       case 'compute':
         // compute 步骤可访问 $value（当前值）和 dataModel 中的所有字段
         return this.eval(p, { $value: current, ...this.flatData() })
+      case 'yoy':
+      case 'mom': {
+        const curr = this.resolveValue(p?.current, current)
+        const prev = this.resolveValue(p?.previous, current)
+        if (prev === 0 || prev === undefined || prev === null) return 0
+        return ((curr - prev) / Math.abs(prev)) * 100
+      }
       default:
         console.warn(`[PipeEngine] Unknown step: ${step.type}`)
         return current
     }
+  }
+
+  /** 解析值：/ 开头视为 dataModel 路径，否则原样返回，undefined 时取 current */
+  private resolveValue(val: any, current: any): any {
+    if (typeof val === 'string' && val.startsWith('/')) return this.resolvePath(val)
+    return val !== undefined && val !== null ? val : current
   }
 
   /**
