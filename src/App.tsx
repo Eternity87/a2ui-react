@@ -100,6 +100,7 @@ function PreviewInner() {
   const [apiKey, setApiKey] = useState('')
   const [requirement, setRequirement] = useState('')
   const [useFullPrompt, setUseFullPrompt] = useState(false)
+  const [exampleType, setExampleType] = useState<'form' | 'dashboard'>('dashboard')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
   const [showConfig, setShowConfig] = useState(true)
@@ -134,8 +135,8 @@ function PreviewInner() {
         apiKey: provider !== 'mock' ? apiKey || undefined : undefined,
       }
       const result = useFullPrompt
-        ? await generatePageWithExample(requirement, config)
-        : await generatePage(requirement, config)
+        ? await generatePageWithExample(requirement, config, exampleType)
+        : await generatePage(requirement, config, exampleType)
       initFromData(result)
       setToast({ msg: '页面生成成功！', type: 'success' })
     } catch (err: any) {
@@ -195,9 +196,18 @@ function PreviewInner() {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs text-gray-500">示例类型</label>
+              <select
+                className="h-7 text-xs border rounded px-1"
+                value={exampleType}
+                onChange={e => setExampleType(e.target.value as 'form' | 'dashboard')}
+              >
+                <option value="dashboard">BI 看板</option>
+                <option value="form">订单表单</option>
+              </select>
               <Checkbox checked={useFullPrompt} onCheckedChange={v => setUseFullPrompt(!!v)} id="fullPrompt" />
-              <label htmlFor="fullPrompt" className="text-xs text-gray-500 cursor-pointer">使用完整示例 Prompt</label>
+              <label htmlFor="fullPrompt" className="text-xs text-gray-500 cursor-pointer">完整示例</label>
             </div>
 
             <div>
@@ -233,6 +243,11 @@ function PreviewInner() {
                   onClick={() => setRequirement('创建一个订单列表页面：用卡片容器包裹搜索栏和数据表格。页面加载时自动查询全部订单，搜索栏输入关键词后点击搜索可过滤。表格列展示订单号、产品、数量、单价、总价、状态、创建时间。')}>
                   <span className="font-medium">订单列表</span>
                   <p className="text-gray-400 text-[11px] mt-0.5">搜索 + DataTable + init 自动加载</p>
+                </div>
+                <div className="p-1.5 bg-gray-50 rounded cursor-pointer hover:bg-blue-50"
+                  onClick={() => setRequirement('生成一个销售数据BI看板：\n\nKPI指标卡：总销售额（¥万，同比趋势）、总订单量（单，同比趋势）、客单价（¥万，环比趋势）、利润率（%，同比趋势），每个KPI带迷你趋势线。\n\n图表：柱状图（2026上半年月度销售额，参考线500）、折线图（营收趋势，参考线100万）、饼图（各品类市场占比）、面积图（月度订单量）、组合图（销售额+利润率双Y轴）、散点图（广告投入vs销售额）、雷达图（产品综合评分：性能/稳定性/易用性/安全性/扩展性/兼容性）、径向柱状图（季度目标完成率）。\n\n交互：顶部显示下钻信息文本。柱状图点击过滤散点图（toggle模式），饼图点击显示品类名称和占比，组合图点击显示该月销售额和利润率，径向图点击显示季度完成率。')}>
+                  <span className="font-medium">BI 看板</span>
+                  <p className="text-gray-400 text-[11px] mt-0.5">Dashboard + 8图表 + KPI + 点击联动</p>
                 </div>
               </div>
             </details>

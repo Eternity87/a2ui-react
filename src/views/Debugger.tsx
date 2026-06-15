@@ -50,6 +50,7 @@ import { javascript } from '@codemirror/lang-javascript'
 import { basicSetup } from 'codemirror'
 import { reactionToJS } from '@/runtime/reaction-to-js'
 import { executeScript, validateScript } from '@/runtime/script-engine'
+import { MockPushSimulator } from '@/mock/push-simulator'
 
 // ===== 工具 =====
 
@@ -491,7 +492,12 @@ export function Debugger() {
     engine.boot()
     engineRef.current = engine
 
+    // 启动本地 KPI 推送模拟器（生产环境替换为 LiveTransport）
+    const pushSim = new MockPushSimulator(a2ui.processor, currentEditPage)
+    pushSim.start()
+
     return () => {
+      pushSim.stop()
       engine.destroy()
       engineRef.current = null
     }

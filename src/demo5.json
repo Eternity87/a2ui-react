@@ -132,81 +132,12 @@
         ]
       }
     },
-    { "updateDataModel": { "surfaceId": "main", "path": "/barData", "value": [
-      { "month": "1月", "sales": 420 }, { "month": "2月", "sales": 380 },
-      { "month": "3月", "sales": 510 }, { "month": "4月", "sales": 460 },
-      { "month": "5月", "sales": 590 }, { "month": "6月", "sales": 650 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/lineData", "value": [
-      { "month": "1月", "revenue": 85 }, { "month": "2月", "revenue": 72 },
-      { "month": "3月", "revenue": 98 }, { "month": "4月", "revenue": 110 },
-      { "month": "5月", "revenue": 125 }, { "month": "6月", "revenue": 148 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/pieData", "value": [
-      { "name": "电子产品", "value": 45 }, { "name": "家具家居", "value": 25 },
-      { "name": "服装配饰", "value": 15 }, { "name": "食品饮料", "value": 10 },
-      { "name": "其他", "value": 5 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/areaData", "value": [
-      { "month": "1月", "orders": 320 }, { "month": "2月", "orders": 280 },
-      { "month": "3月", "orders": 410 }, { "month": "4月", "orders": 390 },
-      { "month": "5月", "orders": 480 }, { "month": "6月", "orders": 550 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/comboData", "value": [
-      { "month": "1月", "sales": 420, "profitRate": 18 },
-      { "month": "2月", "sales": 380, "profitRate": 15 },
-      { "month": "3月", "sales": 510, "profitRate": 22 },
-      { "month": "4月", "sales": 460, "profitRate": 20 },
-      { "month": "5月", "sales": 590, "profitRate": 25 },
-      { "month": "6月", "sales": 650, "profitRate": 28 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/scatterData", "value": [
-      { "ad": 5,  "sales": 320 }, { "ad": 8,  "sales": 380 },
-      { "ad": 12, "sales": 420 }, { "ad": 15, "sales": 480 },
-      { "ad": 18, "sales": 510 }, { "ad": 22, "sales": 590 },
-      { "ad": 25, "sales": 620 }, { "ad": 30, "sales": 650 },
-      { "ad": 10, "sales": 350 }, { "ad": 20, "sales": 540 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/radarData", "value": [
-      { "metric": "性能",    "score": 85 },
-      { "metric": "稳定性",  "score": 72 },
-      { "metric": "易用性",  "score": 90 },
-      { "metric": "安全性",  "score": 78 },
-      { "metric": "扩展性",  "score": 65 },
-      { "metric": "兼容性",  "score": 88 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSales", "value": 6580 } },
     { "updateDataModel": { "surfaceId": "main", "path": "/_event", "value": {} } },
     { "updateDataModel": { "surfaceId": "main", "path": "/drillMonth", "value": "" } },
     { "updateDataModel": { "surfaceId": "main", "path": "/drillSales", "value": 0 } },
     { "updateDataModel": { "surfaceId": "main", "path": "/clickMonth", "value": "" } },
     { "updateDataModel": { "surfaceId": "main", "path": "/clickSales", "value": 0 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/scatterAll", "value": [
-      { "ad": 5,  "sales": 320 }, { "ad": 8,  "sales": 380 },
-      { "ad": 12, "sales": 420 }, { "ad": 15, "sales": 480 },
-      { "ad": 18, "sales": 510 }, { "ad": 22, "sales": 590 },
-      { "ad": 25, "sales": 620 }, { "ad": 30, "sales": 650 },
-      { "ad": 10, "sales": 350 }, { "ad": 20, "sales": 540 }
-    ] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/scatterFiltered", "value": [] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/salesLastYear", "value": 490 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesTrend", "value": 18.5 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiSalesSpark", "value": [420, 380, 510, 460, 590, 650] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrders", "value": 2430 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrdersTrend", "value": 12.3 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiOrdersSpark", "value": [320, 280, 410, 390, 480, 550] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPrice", "value": 2.71 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPriceTrend", "value": -3.2 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiAvgPriceSpark", "value": [2.8, 2.5, 2.9, 3.1, 2.7, 2.71] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRate", "value": 22.8 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRateTrend", "value": 5.1 } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/kpiProfitRateSpark", "value": [18, 15, 22, 20, 25, 28] } },
-    { "updateDataModel": { "surfaceId": "main", "path": "/radialData", "value": [
-      { "quarter": "Q1", "rate": 82 },
-      { "quarter": "Q2", "rate": 95 },
-      { "quarter": "Q3", "rate": 70 },
-      { "quarter": "Q4", "rate": 88 }
-    ] } }
+    { "updateDataModel": { "surfaceId": "main", "path": "/salesLastYear", "value": 490 } }
   ],
   "logic": {
     "reactions": [
@@ -214,19 +145,48 @@
         "id": "initLoad",
         "when": { "field": "/_", "event": "init" },
         "then": [
+          { "type": "apiRequest", "url": "/api/dashboard/kpi", "outputTo": "/rawKpi" },
+          { "type": "apiRequest", "url": "/api/dashboard/monthly-stats", "outputTo": "/rawMonthly" },
+          { "type": "apiRequest", "url": "/api/dashboard/category-share", "outputTo": "/rawCategory" },
+          { "type": "apiRequest", "url": "/api/dashboard/ad-vs-sales", "outputTo": "/rawScatter" },
+          { "type": "apiRequest", "url": "/api/dashboard/product-scores", "outputTo": "/rawScores" },
+          { "type": "apiRequest", "url": "/api/dashboard/quarterly-targets", "outputTo": "/rawTargets" },
           {
             "type": "setValues",
             "map": {
+              "/kpiSales":         { "pipe": [{ "get": "/rawKpi.totalSales" }] },
+              "/kpiSalesTrend":    { "pipe": [{ "get": "/rawKpi.salesTrend" }] },
+              "/kpiSalesSpark":    { "pipe": [{ "get": "/rawKpi.salesSpark" }] },
+              "/kpiOrders":        { "pipe": [{ "get": "/rawKpi.totalOrders" }] },
+              "/kpiOrdersTrend":   { "pipe": [{ "get": "/rawKpi.ordersTrend" }] },
+              "/kpiOrdersSpark":   { "pipe": [{ "get": "/rawKpi.ordersSpark" }] },
+              "/kpiAvgPrice":      { "pipe": [{ "get": "/rawKpi.avgPrice" }] },
+              "/kpiAvgPriceTrend": { "pipe": [{ "get": "/rawKpi.avgPriceTrend" }] },
+              "/kpiAvgPriceSpark": { "pipe": [{ "get": "/rawKpi.avgPriceSpark" }] },
+              "/kpiProfitRate":      { "pipe": [{ "get": "/rawKpi.profitRate" }] },
+              "/kpiProfitRateTrend": { "pipe": [{ "get": "/rawKpi.profitRateTrend" }] },
+              "/kpiProfitRateSpark": { "pipe": [{ "get": "/rawKpi.profitRateSpark" }] },
+              "/barData":   { "pipe": [{ "get": "/rawMonthly.list" }] },
+              "/lineData":  { "pipe": [{ "get": "/rawMonthly.list" }] },
+              "/areaData":  { "pipe": [{ "get": "/rawMonthly.list" }] },
+              "/comboData": { "pipe": [{ "get": "/rawMonthly.list" }] },
+              "/pieData":   { "pipe": [{ "get": "/rawCategory.list" }] },
+              "/radarData": { "pipe": [{ "get": "/rawScores.list" }] },
+              "/radialData": { "pipe": [{ "get": "/rawTargets.list" }] },
+              "/scatterAll": { "pipe": [{ "get": "/rawScatter.list" }] },
+              "/scatterFiltered": { "pipe": [{ "get": "/rawScatter.list" }] },
               "/salesYoY": {
-                "pipe": [
-                  { "yoy": { "current": "/kpiSales", "previous": "/salesLastYear" } }
-                ]
-              },
-              "/scatterFiltered": {
-                "pipe": [{ "get": "/scatterAll" }]
+                "pipe": [{ "yoy": { "current": "/kpiSales", "previous": "/salesLastYear" } }]
               }
             }
           }
+        ]
+      },
+      {
+        "id": "onUnload",
+        "when": { "field": "/_", "event": "unload" },
+        "then": [
+          { "type": "toast", "message": "看板已关闭，推送连接已断开", "variant": "info" }
         ]
       },
       {

@@ -76,6 +76,8 @@ export class ReactionEngine {
   private unsubscribers: (() => void)[] = []
   private previousValues = new Map<string, any>()
   private static MAX_PREVIOUS_VALUES = 200
+  private scheduledTimers: ReturnType<typeof setInterval>[] = []
+  private unloadReactions: Reaction[] = []
 
   constructor(
     private dataModel: DataModel,
@@ -91,6 +93,12 @@ export class ReactionEngine {
         continue
       }
       if (r.when.event === 'click') continue
+
+      if (r.when.event === 'unload') {
+        // unload 事件：在 destroy() 时执行
+        this.unloadReactions.push(r)
+        continue
+      }
 
       // change/blur 事件：DataModel 信号订阅
       const field = dmPath(r.when.field)
@@ -114,6 +122,16 @@ export class ReactionEngine {
   }
 
   destroy() {
+    // 执行 unload 事件（同步执行，不 await）
+    for (const r of this.unloadReactions) {
+      try { this.executeChain(r) } catch (e) { /* unload 不抛错 */ }
+    }
+    this.unloadReactions = []
+
+    // 清除定时器
+    this.scheduledTimers.forEach(t => clearInterval(t))
+    this.scheduledTimers = []
+
     this.unsubscribers.forEach(fn => fn())
     this.unsubscribers = []
     this.previousValues.clear()
@@ -281,6 +299,18 @@ export class ReactionEngine {
             return
           }
         }
+        break
+      }
+      case 'schedule': {
+        const interval = action.interval ?? 30000
+        const timer = setInterval(() => {
+          for (const a of action.then ?? []) {
+            this.executeAction(a, ctx).catch(e => {
+              console.warn(`[ReactionEngine] schedule action failed:`, e?.message || e)
+            })
+          }
+        }, interval)
+        this.scheduledTimers.push(timer)
         break
       }
     }

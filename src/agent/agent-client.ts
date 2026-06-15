@@ -45,7 +45,7 @@ async function callGemini(
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
         generationConfig: {
           responseMimeType: 'application/json',
-          maxOutputTokens: 4096,
+          maxOutputTokens: 8192,
         },
       }),
     },
@@ -83,7 +83,7 @@ async function callDeepSeek(
         { role: 'user', content: userMessage },
       ],
       response_format: { type: 'json_object' },
-      max_tokens: 4096,
+      max_tokens: 8192,
     }),
   })
 
@@ -216,6 +216,7 @@ async function saveToTestJson(data: any) {
 export async function generatePage(
   userRequirement: string,
   config: AgentConfig,
+  exampleType: 'form' | 'dashboard' = 'dashboard',
 ): Promise<AgentResult> {
   // Mock 模式：直接返回 demo 数据
   if (config.provider === 'mock') {
@@ -223,7 +224,7 @@ export async function generatePage(
     return { a2ui: demoOutput.a2ui, logic: demoOutput.logic }
   }
 
-  const systemPrompt = buildSystemPrompt(userRequirement)
+  const systemPrompt = buildSystemPrompt(userRequirement, { exampleType })
   const userMessage = '请生成页面。只输出 JSON。'
 
   let raw: string
@@ -249,12 +250,13 @@ export async function generatePage(
 export async function generatePageWithExample(
   userRequirement: string,
   config: AgentConfig,
+  exampleType: 'form' | 'dashboard' = 'dashboard',
 ): Promise<AgentResult> {
   if (config.provider === 'mock') {
     return generatePage(userRequirement, config)
   }
 
-  const systemPrompt = buildFullPrompt(userRequirement)
+  const systemPrompt = buildFullPrompt(userRequirement, exampleType)
   const userMessage = '请根据需求生成页面，参考示例的格式。只输出 JSON。'
 
   let raw: string

@@ -120,6 +120,56 @@ export function createMockApiExecutor() {
         }
       }
 
+      // ===== BI 看板 =====
+      case '/api/dashboard/kpi':
+        return { data: {
+          totalSales: 6580, salesTrend: 18.5, salesSpark: [420, 380, 510, 460, 590, 650],
+          totalOrders: 2430, ordersTrend: 12.3, ordersSpark: [320, 280, 410, 390, 480, 550],
+          avgPrice: 2.71, avgPriceTrend: -3.2, avgPriceSpark: [2.8, 2.5, 2.9, 3.1, 2.7, 2.71],
+          profitRate: 22.8, profitRateTrend: 5.1, profitRateSpark: [18, 15, 22, 20, 25, 28],
+        }}
+      case '/api/dashboard/monthly-stats':
+        return { data: { list: [
+          { month: '1月', sales: 420, revenue: 85, orders: 320, profitRate: 18 },
+          { month: '2月', sales: 380, revenue: 72, orders: 280, profitRate: 15 },
+          { month: '3月', sales: 510, revenue: 98, orders: 410, profitRate: 22 },
+          { month: '4月', sales: 460, revenue: 110, orders: 390, profitRate: 20 },
+          { month: '5月', sales: 590, revenue: 125, orders: 480, profitRate: 25 },
+          { month: '6月', sales: 650, revenue: 148, orders: 550, profitRate: 28 },
+        ]}}
+      case '/api/dashboard/category-share':
+        return { data: { list: [
+          { name: '电子产品', value: 45 },
+          { name: '家具家居', value: 25 },
+          { name: '服装配饰', value: 15 },
+          { name: '食品饮料', value: 10 },
+          { name: '其他', value: 5 },
+        ]}}
+      case '/api/dashboard/ad-vs-sales':
+        return { data: { list: [
+          { ad: 5,  sales: 320 }, { ad: 8,  sales: 380 },
+          { ad: 12, sales: 420 }, { ad: 15, sales: 480 },
+          { ad: 18, sales: 510 }, { ad: 22, sales: 590 },
+          { ad: 25, sales: 620 }, { ad: 30, sales: 650 },
+          { ad: 10, sales: 350 }, { ad: 20, sales: 540 },
+        ]}}
+      case '/api/dashboard/product-scores':
+        return { data: { list: [
+          { metric: '性能', score: 85 },
+          { metric: '稳定性', score: 72 },
+          { metric: '易用性', score: 90 },
+          { metric: '安全性', score: 78 },
+          { metric: '扩展性', score: 65 },
+          { metric: '兼容性', score: 88 },
+        ]}}
+      case '/api/dashboard/quarterly-targets':
+        return { data: { list: [
+          { quarter: 'Q1', rate: 82 },
+          { quarter: 'Q2', rate: 95 },
+          { quarter: 'Q3', rate: 70 },
+          { quarter: 'Q4', rate: 88 },
+        ]}}
+
       // ===== 页面 JSON（供 Dialog 远程加载） =====
       case '/api/pages/productPicker': {
         return { data: {

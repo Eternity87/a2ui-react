@@ -58,4 +58,12 @@ export const actionRegistry = {
       params: { type: 'object', description: '导航参数字典，值可为静态值或路径引用（/fieldName）' },
     },
   },
+  schedule: {
+    type: 'schedule',
+    description: '定时轮询：按 interval(ms) 间隔重复执行 then 中的 Action 链。页面关闭时自动清除',
+    params: {
+      interval: { type: 'number', defaultValue: 30000, description: '轮询间隔(ms)，默认 30 秒' },
+      then: { type: 'array', required: true, description: '定时执行的 Action 列表' },
+    },
+  },
 } as const

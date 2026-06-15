@@ -124,6 +124,89 @@ export const apiCatalog = [
       createdAt: '2024-06-01',
     },
   },
+  // ===== BI 看板 =====
+  {
+    url: '/api/dashboard/kpi',
+    method: 'GET' as const,
+    description: '获取看板 KPI 指标。totalSales/totalOrders 可被 WebSocket 实时推送覆盖，trend/spark 为历史数据不走推送',
+    responseExample: {
+      totalSales: 6580, salesTrend: 18.5, salesSpark: [420, 380, 510, 460, 590, 650],
+      totalOrders: 2430, ordersTrend: 12.3, ordersSpark: [320, 280, 410, 390, 480, 550],
+      avgPrice: 2.71, avgPriceTrend: -3.2, avgPriceSpark: [2.8, 2.5, 2.9, 3.1, 2.7, 2.71],
+      profitRate: 22.8, profitRateTrend: 5.1, profitRateSpark: [18, 15, 22, 20, 25, 28],
+    },
+  },
+  {
+    url: '/api/dashboard/monthly-stats',
+    method: 'GET' as const,
+    description: '获取月度统计（销售额/营收/订单量/利润率，多图表共用）',
+    responseExample: {
+      list: [
+        { month: '1月', sales: 420, revenue: 85, orders: 320, profitRate: 18 },
+        { month: '2月', sales: 380, revenue: 72, orders: 280, profitRate: 15 },
+        { month: '3月', sales: 510, revenue: 98, orders: 410, profitRate: 22 },
+        { month: '4月', sales: 460, revenue: 110, orders: 390, profitRate: 20 },
+        { month: '5月', sales: 590, revenue: 125, orders: 480, profitRate: 25 },
+        { month: '6月', sales: 650, revenue: 148, orders: 550, profitRate: 28 },
+      ],
+    },
+  },
+  {
+    url: '/api/dashboard/category-share',
+    method: 'GET' as const,
+    description: '获取各品类市场占比',
+    responseExample: {
+      list: [
+        { name: '电子产品', value: 45 },
+        { name: '家具家居', value: 25 },
+        { name: '服装配饰', value: 15 },
+        { name: '食品饮料', value: 10 },
+        { name: '其他', value: 5 },
+      ],
+    },
+  },
+  {
+    url: '/api/dashboard/ad-vs-sales',
+    method: 'GET' as const,
+    description: '获取广告投入 vs 销售额散点数据',
+    responseExample: {
+      list: [
+        { ad: 5, sales: 320 }, { ad: 8, sales: 380 },
+        { ad: 12, sales: 420 }, { ad: 15, sales: 480 },
+        { ad: 18, sales: 510 }, { ad: 22, sales: 590 },
+        { ad: 25, sales: 620 }, { ad: 30, sales: 650 },
+        { ad: 10, sales: 350 }, { ad: 20, sales: 540 },
+      ],
+    },
+  },
+  {
+    url: '/api/dashboard/product-scores',
+    method: 'GET' as const,
+    description: '获取产品综合评分（雷达图）',
+    responseExample: {
+      list: [
+        { metric: '性能', score: 85 },
+        { metric: '稳定性', score: 72 },
+        { metric: '易用性', score: 90 },
+        { metric: '安全性', score: 78 },
+        { metric: '扩展性', score: 65 },
+        { metric: '兼容性', score: 88 },
+      ],
+    },
+  },
+  {
+    url: '/api/dashboard/quarterly-targets',
+    method: 'GET' as const,
+    description: '获取各季度目标完成率',
+    responseExample: {
+      list: [
+        { quarter: 'Q1', rate: 82 },
+        { quarter: 'Q2', rate: 95 },
+        { quarter: 'Q3', rate: 70 },
+        { quarter: 'Q4', rate: 88 },
+      ],
+    },
+  },
   {
     url: '/api/login',
     method: 'POST' as const,
