@@ -46,7 +46,10 @@ import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { javascript } from '@codemirror/lang-javascript'
 import { basicSetup } from 'codemirror'
+import { reactionToJS } from '@/runtime/reaction-to-js'
+import { executeScript, validateScript } from '@/runtime/script-engine'
 
 // ===== 工具 =====
 
@@ -114,21 +117,28 @@ function getParentId(components: any[], childId: string): string | null {
 const cellTypeOptions = ['text', 'input', 'number', 'select']
 
 // ===== CodeMirror hook =====
-function useCodeMirror(initialDoc: string) {
+function useCodeMirror(initialDoc: string, opts?: { language?: 'json' | 'javascript'; readOnly?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const docRef = useRef(initialDoc)
+  const optsRef = useRef(opts)
+  optsRef.current = opts
 
   const create = useCallback(() => {
     if (!containerRef.current || viewRef.current) return
+    const currentOpts = optsRef.current
+    const langExt = currentOpts?.language === 'javascript' ? javascript() : json()
+    const extensions: any[] = [
+      basicSetup, langExt, oneDark,
+      EditorView.lineWrapping,
+      EditorView.updateListener.of(u => { if (u.docChanged) docRef.current = u.state.doc.toString() }),
+      EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, monospace', fontSize: '13px' } }),
+    ]
+    if (currentOpts?.readOnly) extensions.push(EditorView.editable.of(false))
     const view = new EditorView({
       state: EditorState.create({
         doc: docRef.current,
-        extensions: [
-          basicSetup, json(), oneDark,
-          EditorView.updateListener.of(u => { if (u.docChanged) docRef.current = u.state.doc.toString() }),
-          EditorView.theme({ '&': { height: '100%' }, '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, monospace', fontSize: '13px' } }),
-        ],
+        extensions,
       }),
       parent: containerRef.current,
     })
@@ -151,6 +161,8 @@ function useCodeMirror(initialDoc: string) {
 interface PageEditorState {
   components: any[]
   reactions: any[]
+  /** reactionId → JS 代码（用户编辑后保存的脚本） */
+  scripts: Record<string, string>
   initialDataModel: Record<string, any>
   children?: Record<string, any>
 }
@@ -178,6 +190,16 @@ export function Debugger() {
   const [showJsonDialog, setShowJsonDialog] = useState(false)
   const [showDmDialog, setShowDmDialog] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
+  const [showReactionDialog, setShowReactionDialog] = useState(false)
+  const [dialogReactionId, setDialogReactionId] = useState<string | null>(null)
+  const [dialogEditMode, setDialogEditMode] = useState(false)
+  const [showNewForm, setShowNewForm] = useState(false)
+  const [newRxId, setNewRxId] = useState('')
+  const [newRxEvent, setNewRxEvent] = useState('click')
+  const [newRxField, setNewRxField] = useState('')
+
+  // Reaction → JS 代码预览（read-only CodeMirror）
+  const reactionCm = useCodeMirror('', { language: 'javascript', readOnly: !dialogEditMode })
 
   // 注册 toast 处理器到 A2UI context，供 Dialog 等子组件使用
   useEffect(() => {
@@ -210,16 +232,41 @@ export function Debugger() {
   const [renderKey, setRenderKey] = useState(0)
 
   // 当前编辑页的状态（方便访问）
-  const currentPage = pages[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
+  const currentPage = pages[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
   const components = currentPage.components
   const reactions = currentPage.reactions
+  const scripts = currentPage.scripts
 
   // 包装 setComponents / setReactions 以操作当前页
   const setComponents = useCallback((updater: any[] | ((prev: any[]) => any[])) => {
     setPages(prev => {
-      const cur = prev[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
       const newComps = typeof updater === 'function' ? updater(cur.components) : updater
       return { ...prev, [currentEditPage]: { ...cur, components: newComps } }
+    })
+  }, [currentEditPage])
+
+  const setReactions = useCallback((updater: any[] | ((prev: any[]) => any[])) => {
+    setPages(prev => {
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
+      const newRx = typeof updater === 'function' ? updater(cur.reactions) : updater
+      return { ...prev, [currentEditPage]: { ...cur, reactions: newRx } }
+    })
+  }, [currentEditPage])
+
+  const saveScript = useCallback((reactionId: string, code: string) => {
+    setPages(prev => {
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
+      return { ...prev, [currentEditPage]: { ...cur, scripts: { ...cur.scripts, [reactionId]: code } } }
+    })
+  }, [currentEditPage])
+
+  const deleteScript = useCallback((reactionId: string) => {
+    setPages(prev => {
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
+      const next = { ...cur.scripts }
+      delete next[reactionId]
+      return { ...prev, [currentEditPage]: { ...cur, scripts: next } }
     })
   }, [currentEditPage])
 
@@ -228,6 +275,51 @@ export function Debugger() {
     components.forEach(c => m.set(c.id, c))
     return m
   }, [components])
+
+  // 当前选中组件关联的 reactions
+  const componentReactions = useMemo(() => {
+    if (!selectedId) return []
+    return reactions.filter(r => r.when?.field === selectedId)
+  }, [selectedId, reactions])
+
+  // Dialog 中切换 reaction 时更新代码
+  useEffect(() => {
+    if (!dialogReactionId) { reactionCm.updateDoc(''); setDialogEditMode(false); return }
+    // 优先展示用户保存的 script，否则展示自动生成的代码
+    const code = scripts[dialogReactionId] ?? (() => {
+      const r = reactions.find(r => r.id === dialogReactionId)
+      return r ? reactionToJS(r) : ''
+    })()
+    reactionCm.updateDoc(code)
+    setDialogEditMode(false)
+  }, [dialogReactionId, reactions, scripts])
+
+  // 编辑模式切换：更新 CodeMirror editable 状态
+  const toggleEditMode = useCallback(() => {
+    if (!dialogReactionId) return
+    if (!dialogEditMode) {
+      // 进入编辑模式
+      setDialogEditMode(true)
+    } else {
+      // 保存并退出编辑模式
+      const code = reactionCm.getDoc()
+      const result = validateScript(code)
+      if (!result.valid) {
+        setToast({ msg: `脚本语法错误: ${result.error}`, type: 'error' })
+        return
+      }
+      saveScript(dialogReactionId, code)
+      setDialogEditMode(false)
+      setToast({ msg: '脚本已保存', type: 'success' })
+    }
+  }, [dialogReactionId, dialogEditMode, reactionCm, saveScript])
+
+  // 打开 reaction dialog 时默认选中当前组件关联的第一个
+  function openReactionDialog() {
+    const first = componentReactions[0]?.id ?? reactions[0]?.id ?? null
+    setDialogReactionId(first)
+    setShowReactionDialog(true)
+  }
 
   // ===== 同步：components[] → SurfaceModel =====
 
@@ -323,6 +415,7 @@ export function Debugger() {
       newPages[pageId] = {
         components: comps,
         reactions: page.logic?.reactions ? structuredClone(page.logic.reactions) : [],
+        scripts: page.logic?.scripts ? structuredClone(page.logic.scripts) : {},
         initialDataModel: structuredClone(extractDataFromMessages(page.a2ui)),
         children: page.children ? structuredClone(page.children) : undefined,
       }
@@ -404,21 +497,42 @@ export function Debugger() {
     }
   }, [currentEditPage, reactions])
 
-  // ===== Action 事件 → ReactionEngine =====
+  // ===== Action 事件 → ReactionEngine / ScriptEngine =====
 
   useEffect(() => {
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
-        // 将点击数据写入 dataModel，供 Reaction 的 pipe 表达式通过 get /_event 访问
+        const rid = action.context.reactionId as string
         const surface = getSurfaceRef.current(currentEditPage)
         if (action.context.clickData && surface) {
-          // 统一取 payload（recharts 所有图形元素的原始数据都在 payload 中）
           surface.dataModel.set('/_event', action.context.clickData?.payload ?? action.context.clickData)
         }
-        engineRef.current?.triggerReaction(action.context.reactionId)
+        // 优先执行用户自定义脚本
+        if (surface && scripts[rid]) {
+          const pipeEngine = new PipeEngine((surface.dataModel.get('/') ?? {}) as Record<string, any>)
+          executeScript(scripts[rid], {
+            dataModel: surface.dataModel,
+            pipeEngine,
+            toast: (msg, type) => setToast({ msg, type }),
+            sharedStore: useSharedStore,
+            navigate: (pageId, params) => {
+              const targetSurface = getSurfaceRef.current(pageId)
+              if (targetSurface && params) {
+                for (const [k, v] of Object.entries(params)) {
+                  targetSurface.dataModel.set(`/navParams/${k}`, v)
+                }
+              }
+              setCurrentEditPage(pageId)
+              setCurrentSurfaceIdRef.current(pageId)
+            },
+            action,
+          })
+        } else {
+          engineRef.current?.triggerReaction(rid)
+        }
       }
     })
-  }, [currentEditPage, a2ui.surface])
+  }, [currentEditPage, a2ui.surface, scripts])
 
   // ===== Toast =====
 
@@ -498,8 +612,8 @@ export function Debugger() {
 
   function clearPage() {
     setPages(prev => {
-      const cur = prev[currentEditPage] ?? { components: [], reactions: [], initialDataModel: {} }
-      return { ...prev, [currentEditPage]: { ...cur, components: [], reactions: [], initialDataModel: {} } }
+      const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
+      return { ...prev, [currentEditPage]: { ...cur, components: [], reactions: [], scripts: {}, initialDataModel: {} } }
     })
     setSelectedId(null)
     // 同步清空 SurfaceModel 中的运行时 dataModel
@@ -784,13 +898,17 @@ export function Debugger() {
     // 序列化所有页面为多页面 JSON 格式
     const serializedPages: Record<string, any> = {}
     for (const [pageId, ps] of Object.entries(pages)) {
+      const logic: any = { reactions: ps.reactions }
+      if (ps.scripts && Object.keys(ps.scripts).length > 0) {
+        logic.scripts = ps.scripts
+      }
       serializedPages[pageId] = {
         a2ui: [
           { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
           { surfaceUpdate: { surfaceId: 'main', components: ps.components } },
           ...dataModelToV09Messages('main', ps.initialDataModel),
         ],
-        logic: { reactions: ps.reactions },
+        logic,
         ...(ps.children ? { children: ps.children } : {}),
       }
     }
@@ -828,6 +946,16 @@ export function Debugger() {
       dmCm.destroy()
     }
   }, [showDmDialog])
+
+  // Reaction JS CodeMirror 生命周期：Dialog 打开/关闭 或 编辑模式切换
+  useEffect(() => {
+    if (showReactionDialog) {
+      const t = setTimeout(() => { reactionCm.destroy(); reactionCm.create() }, 150)
+      return () => clearTimeout(t)
+    } else {
+      reactionCm.destroy()
+    }
+  }, [showReactionDialog, dialogEditMode])
 
   function applyJsonEdit() {
     try {
@@ -1016,6 +1144,7 @@ export function Debugger() {
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
           <Button size="sm" variant="outline" onClick={openJsonDialog}>显示 JSON</Button>
           <Button size="sm" variant="outline" onClick={openDmDialog}>DataModel</Button>
+          <Button size="sm" variant="outline" disabled={reactions.length === 0} onClick={() => { setDialogReactionId(reactions[0]?.id ?? null); setShowReactionDialog(true) }}>Reactions</Button>
           <Button size="sm" variant="destructive" disabled={!selectedId} onClick={deleteComponent}>删除</Button>
           <Button size="sm" variant="outline" onClick={clearPage}>清空</Button>
         </div>
@@ -1123,6 +1252,13 @@ export function Debugger() {
                 </div>
               ))}
             </div>
+            {componentReactions.length > 0 && (
+              <div className="border-t px-3 py-2">
+                <Button size="sm" variant="outline" className="w-full text-xs" onClick={openReactionDialog}>
+                  Reaction 代码 ({componentReactions.length})
+                </Button>
+              </div>
+            )}
           </>
         ) : (
           <div className="p-3">
@@ -1140,6 +1276,169 @@ export function Debugger() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowJsonDialog(false)}>取消</Button>
             <Button onClick={applyJsonEdit}>确定</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reaction JS Dialog */}
+      <Dialog open={showReactionDialog} onOpenChange={setShowReactionDialog}>
+        <DialogContent className="max-w-[1000px]">
+          <DialogHeader>
+            <DialogTitle>Reaction 代码</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const isComponentEvent = (r: any) => r.when?.event === 'click' || r.when?.event === 'change'
+            const compEvents = reactions.filter(isComponentEvent)
+            const pageEvents = reactions.filter(r => !isComponentEvent(r))
+
+            // 按组件 ID 分组
+            const byComponent = new Map<string, any[]>()
+            for (const r of compEvents) {
+              const key = r.when?.field ?? '_unknown'
+              if (!byComponent.has(key)) byComponent.set(key, [])
+              byComponent.get(key)!.push(r)
+            }
+
+            return (
+              <div className="flex gap-3" style={{ height: '60vh' }}>
+                {/* 左侧列表 */}
+                <div className="w-[260px] shrink-0 border rounded overflow-y-auto bg-gray-50">
+                  {compEvents.length > 0 && (
+                    <div className="py-1">
+                      <div className="text-xs text-gray-400 px-3 py-1.5 font-medium">组件事件</div>
+                      {[...byComponent.entries()].map(([compId, rxList]) => (
+                        <div key={compId}>
+                          <div className="text-xs text-gray-400 px-3 py-1 font-mono">{compId}</div>
+                          {rxList.map(r => (
+                            <button
+                              key={r.id}
+                              className={`w-full text-left px-5 py-1 text-xs font-mono hover:bg-blue-50 ${dialogReactionId === r.id ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-500' : 'text-gray-600'}`}
+                              onClick={() => setDialogReactionId(r.id)}
+                            >
+                              {r.id} <span className="text-gray-400">·{r.when?.event}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {pageEvents.length > 0 && (
+                    <div className="border-t py-1">
+                      <div className="text-xs text-gray-400 px-3 py-1.5 font-medium">页面 / 数据事件</div>
+                      {pageEvents.map(r => (
+                        <button
+                          key={r.id}
+                          className={`w-full text-left px-3 py-1 text-xs font-mono hover:bg-blue-50 ${dialogReactionId === r.id ? 'bg-blue-100 text-blue-700 border-r-2 border-blue-500' : 'text-gray-600'}`}
+                          onClick={() => setDialogReactionId(r.id)}
+                        >
+                          {r.id} <span className="text-gray-400">·{r.when?.event}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {reactions.length === 0 && (
+                    <div className="text-xs text-gray-400 text-center py-8">暂无 Reaction</div>
+                  )}
+                  <div className="border-t px-2 py-1.5">
+                    {!showNewForm ? (
+                      <button
+                        className="w-full text-left text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded"
+                        onClick={() => setShowNewForm(true)}
+                      >
+                        + 新建
+                      </button>
+                    ) : (
+                      <div className="space-y-1.5 p-1">
+                        <input
+                          className="w-full h-7 text-xs border rounded px-2 font-mono"
+                          placeholder="Reaction ID (如 onFilter)"
+                          value={newRxId}
+                          onChange={e => setNewRxId(e.target.value)}
+                        />
+                        <select
+                          className="w-full h-7 text-xs border rounded px-1"
+                          value={newRxEvent}
+                          onChange={e => { setNewRxEvent(e.target.value); setNewRxField('') }}
+                        >
+                          <option value="click">click — 组件点击</option>
+                          <option value="change">change — 组件值变化</option>
+                          <option value="init">init — 页面加载</option>
+                        </select>
+                        {newRxEvent !== 'init' && (
+                          <select
+                            className="w-full h-7 text-xs border rounded px-1"
+                            value={newRxField}
+                            onChange={e => setNewRxField(e.target.value)}
+                          >
+                            <option value="">选择组件...</option>
+                            {components.map(c => (
+                              <option key={c.id} value={c.id}>{c.id} ({c.component})</option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="flex gap-1">
+                          <button
+                            className="flex-1 h-7 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-40"
+                            disabled={!newRxId.trim() || (newRxEvent !== 'init' && !newRxField)}
+                            onClick={() => {
+                              const id = newRxId.trim()
+                              const field = newRxEvent === 'init' ? '/_' : newRxField
+                              setReactions(prev => [...prev, { id, when: { field, event: newRxEvent }, then: [] }])
+                              // 自动为目标组件设置 reactionId
+                              if (newRxEvent !== 'init') {
+                                setComponents(prev => prev.map(c =>
+                                  c.id === newRxField ? { ...c, props: { ...c.props, reactionId: id } } : c
+                                ))
+                              }
+                              setDialogReactionId(id)
+                              setNewRxId('')
+                              setNewRxEvent('click')
+                              setNewRxField('')
+                              setShowNewForm(false)
+                              // 直接进入编辑模式
+                              setTimeout(() => setDialogEditMode(true), 200)
+                            }}
+                          >
+                            创建
+                          </button>
+                          <button
+                            className="h-7 px-2 text-xs text-gray-500 hover:bg-gray-100 rounded"
+                            onClick={() => { setShowNewForm(false); setNewRxId(''); setNewRxField('') }}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {/* 右侧代码 */}
+                <div className="flex-1 min-w-0 border rounded overflow-hidden">
+                  <div ref={reactionCm.containerRef} className="h-full" />
+                </div>
+              </div>
+            )
+          })()}
+          <DialogFooter className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {scripts[dialogReactionId ?? ''] && (
+                <span className="text-xs text-green-600 font-medium">已自定义脚本</span>
+              )}
+              {!scripts[dialogReactionId ?? ''] && dialogReactionId && (
+                <span className="text-xs text-gray-400">自动生成</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {scripts[dialogReactionId ?? ''] && dialogReactionId && (
+                <Button size="sm" variant="destructive" onClick={() => { deleteScript(dialogReactionId!); setToast({ msg: '已还原为自动生成', type: 'info' }) }}>还原</Button>
+              )}
+              {dialogReactionId && (
+                <Button size="sm" onClick={toggleEditMode}>
+                  {dialogEditMode ? '保存' : '编辑'}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setShowReactionDialog(false)}>关闭</Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -493,7 +493,7 @@ export function rewriteSurfaceId(messages: any[], newId: string): any[] {
 /** 多页面 JSON 中单页的定义 */
 export interface PageDef {
   a2ui: any[]
-  logic: { reactions: any[] }
+  logic: { reactions: any[]; scripts?: Record<string, string> }
   /** 内嵌子 surface 定义（供 Dialog 组件引用） */
   children?: Record<string, PageDef>
 }
