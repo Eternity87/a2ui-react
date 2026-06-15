@@ -251,7 +251,7 @@ export class ReactionEngine {
         break
       }
       case 'toast':
-        this.services.toast(action.message, action.variant ?? 'info')
+        this.services.toast(this.resolveTemplate(action.message), action.variant ?? 'info')
         break
       case 'cascade':
         this.setValue(action.target, undefined)
@@ -284,6 +284,14 @@ export class ReactionEngine {
         break
       }
     }
+  }
+
+  /** 解析模板字符串中的 ${/xxx} 路径引用为实际值 */
+  private resolveTemplate(message: string): string {
+    return message.replace(/\$\{\/([^}]+)\}/g, (_, path: string) => {
+      const val = this.resolveValue(`/${path.trim()}`)
+      return val !== undefined && val !== null ? String(val) : ''
+    })
   }
 
   /**

@@ -308,10 +308,15 @@ function PageRenderer({
   useEffect(() => {
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
+        const surface = a2ui.getSurface(currentPageId)
+        if (action.context.clickData && surface) {
+          // 统一取 payload（recharts 所有图形元素的原始数据都在 payload 中）
+          surface.dataModel.set('/_event', action.context.clickData?.payload ?? action.context.clickData)
+        }
         engineRef.current?.triggerReaction(action.context.reactionId)
       }
     })
-  }, [currentPageId, a2ui])
+  }, [currentPageId, a2ui.surface])
 
   const currentSurface = currentPageId ? a2ui.getSurface(currentPageId) : null
 

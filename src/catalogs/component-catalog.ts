@@ -272,6 +272,13 @@ export const componentCatalog: Record<string, ComponentDef> = {
     type: 'AreaChart',
     description: '面积图，支持动态数据绑定，适合体量趋势展示',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击面积图数据点时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击数据点的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       xField: { type: 'string', required: true, description: 'X 轴字段名', tier: 'core' },
@@ -298,12 +305,20 @@ export const componentCatalog: Record<string, ComponentDef> = {
       targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
       colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
       colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   ComposedChart: {
     type: 'ComposedChart',
     description: '组合图，同一坐标系混合柱状+折线，适合双指标对比',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击柱状或折线元素时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击元素的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       xField: { type: 'string', required: true, description: 'X 轴字段名', tier: 'core' },
@@ -329,6 +344,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       targetValue: { type: 'number', description: '条件着色阈值，高于此值达标绿、低于未达标红', tier: 'common' },
       colorAbove: { type: 'string', defaultValue: '#52c41a', description: '达标（高于阈值）的颜色', tier: 'styling' },
       colorBelow: { type: 'string', defaultValue: '#ff4d4f', description: '未达标（低于阈值）的颜色', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   ScatterChart: {
@@ -372,6 +388,13 @@ export const componentCatalog: Record<string, ComponentDef> = {
     type: 'RadarChart',
     description: '雷达图，适合多指标对比和综合评估',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击雷达图数据点时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击数据点的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       nameKey: { type: 'string', required: true, description: '维度名称字段名，如 "metric"', tier: 'core' },
@@ -389,12 +412,20 @@ export const componentCatalog: Record<string, ComponentDef> = {
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   RadialBarChart: {
     type: 'RadialBarChart',
     description: '径向柱状图，适合环形进度/仪表盘展示',
     category: 'chart',
+    events: {
+      chartClick: {
+        description: '点击径向柱状图元素时触发',
+        mapsTo: 'click',
+        payload: '{ reactionId: 绑定的 Reaction ID, clickData: 被点击元素的数据 }',
+      },
+    },
     props: {
       data: { type: 'DynamicValue', required: true, description: '图表数据数组的 DataBinding { path }', tier: 'core' },
       nameKey: { type: 'string', required: true, description: '类别名称字段名', tier: 'core' },
@@ -412,6 +443,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
       fontSize: { type: 'number', defaultValue: 13, description: '全局字号(px)，影响轴刻度/图例/Tooltip/标签', tier: 'styling' },
       fontFamily: { type: 'string', defaultValue: "Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif", description: '字体栈，保证中英文美观渲染', tier: 'styling' },
       chartMargin: { type: 'number', defaultValue: 16, description: '图表四周边距(px)，文字溢出时加大此值', tier: 'styling' },
+      reactionId: { type: 'string', description: '点击图表元素时触发的 Reaction ID', tier: 'common' },
     },
   },
   StatCard: {

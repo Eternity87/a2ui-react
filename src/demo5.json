@@ -53,7 +53,8 @@
               "title": "2026 上半年营收趋势", "height": 280, "color": "#52c41a",
               "showDataLabel": true,
               "referenceValue": 100, "referenceLabel": "目标 100 万",
-              "targetValue": 100
+              "targetValue": 100,
+              "reactionId": "onLineClick"
             }
           },
           {
@@ -66,7 +67,8 @@
               "colors": "#1890ff,#52c41a,#faad14,#f5222d,#722ed1",
               "labelFormat": "namePercent",
               "labelPosition": "outside", "labelOffset": 10,
-              "targetValue": 20
+              "targetValue": 20,
+              "reactionId": "onPieClick"
             }
           },
           {
@@ -78,7 +80,8 @@
               "title": "2026 上半年订单量", "height": 280, "color": "#faad14",
               "showDataLabel": true,
               "referenceValue": 400, "referenceLabel": "目标 400",
-              "targetValue": 400
+              "targetValue": 400,
+              "reactionId": "onAreaClick"
             }
           },
           {
@@ -90,7 +93,8 @@
               "title": "2026 上半年销售额与利润率", "height": 280,
               "color": "#1890ff", "color2": "#f5222d",
               "showDataLabel": true,
-              "referenceValue": 500, "referenceLabel": "目标 500"
+              "referenceValue": 500, "referenceLabel": "目标 500",
+              "reactionId": "onComboClick"
             }
           },
           {
@@ -110,7 +114,8 @@
             "props": {
               "data": { "path": "/radarData" },
               "nameKey": "metric", "dataKey": "score",
-              "title": "产品综合评分", "height": 280, "color": "#faad14", "fillOpacity": 0.25
+              "title": "产品综合评分", "height": 280, "color": "#faad14", "fillOpacity": 0.25,
+              "reactionId": "onRadarClick"
             }
           },
           {
@@ -120,7 +125,8 @@
               "data": { "path": "/radialData" },
               "nameKey": "quarter", "valueKey": "rate",
               "title": "各季度目标完成率(%)", "height": 280,
-              "colors": "#1890ff,#52c41a,#faad14,#f5222d"
+              "colors": "#1890ff,#52c41a,#faad14,#f5222d",
+              "reactionId": "onRadialClick"
             }
           }
         ]
@@ -271,6 +277,84 @@
               }
             ]
           }
+        ]
+      },
+      {
+        "id": "onAreaClick",
+        "when": { "field": "areaChart", "event": "click" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/areaTotal": {
+                "pipe": [
+                  { "get": "/areaData" },
+                  { "compute": "$value.reduce((s,i) => s + i.orders, 0)" }
+                ]
+              }
+            }
+          },
+          { "type": "toast", "message": "2026上半年订单量: 共 ${/areaData.length} 个月，合计 ${/areaTotal} 单", "variant": "info" }
+        ]
+      },
+      {
+        "id": "onComboClick",
+        "when": { "field": "comboChart", "event": "click" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/drillMonth": { "pipe": [{ "get": "/_event.month" }] },
+              "/drillSales": { "pipe": [{ "get": "/_event.sales" }] }
+            }
+          },
+          { "type": "toast", "message": "选中 ${/drillMonth}: 销售额 ${/drillSales} 万，利润率 ${/_event.profitRate}%", "variant": "info" }
+        ]
+      },
+      {
+        "id": "onRadarClick",
+        "when": { "field": "radarChart", "event": "click" },
+        "then": [
+          { "type": "toast", "message": "产品综合评分雷达图已点击", "variant": "info" }
+        ]
+      },
+      {
+        "id": "onRadialClick",
+        "when": { "field": "radialChart", "event": "click" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/drillMonth": { "pipe": [{ "get": "/_event.quarter" }] },
+              "/drillSales": { "pipe": [{ "get": "/_event.rate" }] }
+            }
+          },
+          { "type": "toast", "message": "${/_event.quarter} 目标完成率: ${/_event.rate}%", "variant": "success" }
+        ]
+      },
+      {
+        "id": "onLineClick",
+        "when": { "field": "lineChart", "event": "click" },
+        "then": [
+          {
+            "type": "setValues",
+            "map": {
+              "/lineAvg": {
+                "pipe": [
+                  { "get": "/lineData" },
+                  { "compute": "Math.round($value.reduce((s,i) => s + i.revenue, 0) / $value.length)" }
+                ]
+              }
+            }
+          },
+          { "type": "toast", "message": "2026上半年营收: 共 ${/lineData.length} 个月，月均 ${/lineAvg} 万", "variant": "info" }
+        ]
+      },
+      {
+        "id": "onPieClick",
+        "when": { "field": "pieChart", "event": "click" },
+        "then": [
+          { "type": "toast", "message": "${/_event.name}: 占比 ${/_event.value}%", "variant": "info" }
         ]
       }
     ]

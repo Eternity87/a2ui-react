@@ -412,12 +412,13 @@ export function Debugger() {
         // 将点击数据写入 dataModel，供 Reaction 的 pipe 表达式通过 get /_event 访问
         const surface = getSurfaceRef.current(currentEditPage)
         if (action.context.clickData && surface) {
-          surface.dataModel.set('/_event', action.context.clickData)
+          // 统一取 payload（recharts 所有图形元素的原始数据都在 payload 中）
+          surface.dataModel.set('/_event', action.context.clickData?.payload ?? action.context.clickData)
         }
         engineRef.current?.triggerReaction(action.context.reactionId)
       }
     })
-  }, [a2ui.currentSurfaceId])
+  }, [currentEditPage, a2ui.surface])
 
   // ===== Toast =====
 

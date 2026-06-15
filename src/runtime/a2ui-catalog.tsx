@@ -382,7 +382,8 @@ const LineChartImpl = createA2UIComponent<{
     ? (lastVal >= targetValue ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f'))
     : (color ?? '#1890ff')
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs, cursor: reactionId ? 'pointer' : undefined }}
+      onClick={reactionId ? () => dispatchAction('a2ui.click', { reactionId, clickData: null }) : undefined}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
       <ResponsiveContainer width="100%" height={height ?? 300}>
         <LineChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
@@ -395,8 +396,7 @@ const LineChartImpl = createA2UIComponent<{
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
           <Line type={(curveType as any) ?? 'monotone'} dataKey={yField} stroke={lineColor} strokeWidth={strokeWidth ?? 2} dot={showDot ?? true}
-            label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
-            onClick={reactionId ? (d: any) => dispatchAction('a2ui.click', { reactionId, clickData: d }) : undefined} />
+            label={(showDataLabel ?? false) ? { position: 'top' } : undefined} />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -462,7 +462,8 @@ const AreaChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
-}>('AreaChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, strokeWidth, fillOpacity, curveType, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow }) => {
+  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+}>('AreaChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, strokeWidth, fillOpacity, curveType, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
@@ -485,7 +486,8 @@ const AreaChartImpl = createA2UIComponent<{
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
           <Area type={(curveType as any) ?? 'monotone'} dataKey={yField} stroke={areaColor} fill={areaColor} strokeWidth={strokeWidth ?? 2} fillOpacity={fillOpacity ?? 0.3}
-            label={(showDataLabel ?? false) ? { position: 'top' } : undefined} />
+            label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
+            onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -499,7 +501,8 @@ const ComposedChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
-}>('ComposedChart', ({ data, xField, yField, yField2, title, height, width, color, color2, showLegend, showTooltip, showGrid, showDataLabel, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow }) => {
+  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+}>('ComposedChart', ({ data, xField, yField, yField2, title, height, width, color, color2, showLegend, showTooltip, showGrid, showDataLabel, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
@@ -524,11 +527,13 @@ const ComposedChartImpl = createA2UIComponent<{
           {referenceValue !== undefined && (
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} yAxisId="left" />
           )}
-          <Bar yAxisId="left" dataKey={yField ?? ''} fill={barColor}>
+          <Bar yAxisId="left" dataKey={yField ?? ''} fill={barColor}
+            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined}>
             {(showDataLabel ?? false) && <LabelList dataKey={yField} position="top" />}
           </Bar>
           {yField2 && <Line yAxisId="right" type="monotone" dataKey={yField2} stroke={lineColor2} strokeWidth={2}
-            label={(showDataLabel ?? false) ? { position: 'top' } : undefined} />}
+            label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
+            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined} />}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -582,7 +587,8 @@ const RadarChartImpl = createA2UIComponent<{
   height?: number; width?: any; color?: string; fillOpacity?: number; strokeWidth?: number
   showLegend?: boolean; showTooltip?: boolean
   fontSize?: number; fontFamily?: string; chartMargin?: number
-}>('RadarChart', ({ data, nameKey, dataKey, title, height, width, color, fillOpacity, strokeWidth, showLegend, showTooltip, fontSize, fontFamily, chartMargin }) => {
+  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+}>('RadarChart', ({ data, nameKey, dataKey, title, height, width, color, fillOpacity, strokeWidth, showLegend, showTooltip, fontSize, fontFamily, chartMargin, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
@@ -597,7 +603,8 @@ const RadarChartImpl = createA2UIComponent<{
           <PolarRadiusAxis tick={{ fontSize: fs }} />
           {(showTooltip ?? true) && <Tooltip contentStyle={{ fontSize: fs }} />}
           {(showLegend ?? true) && <Legend wrapperStyle={{ fontSize: fs }} />}
-          <Radar name={title ?? ''} dataKey={dataKey ?? ''} stroke={color ?? '#1890ff'} fill={color ?? '#1890ff'} fillOpacity={fillOpacity ?? 0.3} strokeWidth={strokeWidth ?? 2} />
+          <Radar name={title ?? ''} dataKey={dataKey ?? ''} stroke={color ?? '#1890ff'} fill={color ?? '#1890ff'} fillOpacity={fillOpacity ?? 0.3} strokeWidth={strokeWidth ?? 2}
+            onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
         </RadarChart>
       </ResponsiveContainer>
     </div>
@@ -610,7 +617,8 @@ const RadialBarChartImpl = createA2UIComponent<{
   innerRadius?: number; outerRadius?: number
   showLegend?: boolean; showTooltip?: boolean
   fontSize?: number; fontFamily?: string; chartMargin?: number
-}>('RadialBarChart', ({ data, nameKey, valueKey, title, height, width, colors, innerRadius, outerRadius, showLegend, showTooltip, fontSize, fontFamily, chartMargin }) => {
+  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+}>('RadialBarChart', ({ data, nameKey, valueKey, title, height, width, colors, innerRadius, outerRadius, showLegend, showTooltip, fontSize, fontFamily, chartMargin, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const colorArr = (colors ?? '#1890ff,#52c41a,#faad14,#f5222d,#722ed1').split(',').map(c => c.trim())
   const fs = fontSize ?? 13
@@ -625,7 +633,8 @@ const RadialBarChartImpl = createA2UIComponent<{
           <PolarRadiusAxis angle={30} type="category" dataKey={nameKey} tick={{ fontSize: fs }} />
           {(showTooltip ?? true) && <Tooltip contentStyle={{ fontSize: fs }} />}
           {(showLegend ?? true) && <Legend wrapperStyle={{ fontSize: fs }} />}
-          <RadialBar dataKey={valueKey ?? ''} background>
+          <RadialBar dataKey={valueKey ?? ''} background
+            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined}>
             {chartData.map((_, i) => (
               <Cell key={i} fill={colorArr[i % colorArr.length]} />
             ))}
