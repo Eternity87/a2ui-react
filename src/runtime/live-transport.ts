@@ -132,11 +132,20 @@ export class LiveTransport {
   private scheduleReconnect() {
     if (!this.opts.reconnect || this.reconnectCount >= this.opts.maxReconnects) return
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+
+    // 指数退避 + jitter 防止惊群效应
+    // delay = min(baseInterval × 2^count, 30s) × jitter(±25%)
+    const base = this.opts.reconnectInterval
+    const cap = 30_000
+    const exponential = Math.min(base * Math.pow(2, this.reconnectCount), cap)
+    const jitter = exponential * (0.75 + Math.random() * 0.5)
+    const delay = Math.round(jitter)
+
     this.reconnectTimer = setTimeout(() => {
       this.reconnectCount++
-      logger.info(`[LiveTransport] 重连 (${this.reconnectCount})...`)
+      logger.info(`[LiveTransport] 重连 (${this.reconnectCount}/${this.opts.maxReconnects === Infinity ? '∞' : this.opts.maxReconnects}) — 距上次 ${delay}ms`)
       this.connect()
-    }, this.opts.reconnectInterval)
+    }, delay)
   }
 
   private startHeartbeat() {

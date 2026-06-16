@@ -127,6 +127,8 @@ function useCodeMirror(initialDoc: string, opts?: { language?: 'json' | 'javascr
   const optsRef = useRef(opts)
   optsRef.current = opts
 
+  // 依赖数组为空是刻意为之：通过 optsRef 读取最新 options，避免 StrictMode 下重建回调。
+  // create 仅由 Dialog 的 open/close 生命周期手动调用，不依赖 React 重渲染触发。
   const create = useCallback(() => {
     if (!containerRef.current || viewRef.current) return
     const currentOpts = optsRef.current
@@ -389,7 +391,7 @@ export function Debugger() {
     let maxN = 0
 
     for (const [pageId, page] of Object.entries(normalized.pages)) {
-      const su = page.a2ui?.find((m: any) => 'surfaceUpdate' in m)
+      const su = page.a2ui?.find((m): m is { surfaceUpdate: { surfaceId: string; components: any[] } } => 'surfaceUpdate' in m)
       const rawComps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
       const comps = normalizeV08Components(rawComps) // v0.8 → v0.9 平级格式
       // 归一化：v0.9 平级 props → legacy 嵌套 props
@@ -474,6 +476,7 @@ export function Debugger() {
   const setCurrentSurfaceIdRef = useRef(a2ui.setCurrentSurfaceId)
   setCurrentSurfaceIdRef.current = a2ui.setCurrentSurfaceId
 
+  // StrictMode 下该 effect 会被双调。boot() 有幂等守卫，cleanup 确保完整清理。
   useEffect(() => {
     const surface = getSurfaceRef.current(currentEditPage)
     if (!surface || reactions.length === 0) {
@@ -507,9 +510,12 @@ export function Debugger() {
     pushSim.start()
 
     return () => {
-      pushSim.stop()
-      engine.destroy()
-      engineRef.current = null
+      // try/finally 确保 pushSim 和 engine 都被清理，即使其中一个抛错
+      try { pushSim.stop() } finally {
+        try { engine.destroy() } finally {
+          engineRef.current = null
+        }
+      }
     }
   }, [currentEditPage, reactions])
 
@@ -851,7 +857,7 @@ export function Debugger() {
     if (!ds || !di) return
 
     const [tableId, colIdxStr] = virtualId.split('$col$')
-    const targetIndex = parseInt(colIdxStr)
+    const targetIndex = parseInt(colIdxStr ?? '')
     if (isNaN(targetIndex)) return
 
     if (ds.type === 'column') {

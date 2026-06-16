@@ -186,11 +186,13 @@ const TextFieldImpl = createA2UIComponent<{
  * Select — 下拉选择
  * options 支持 DataBinding { path } 或静态数组；由 resolveProps 解析
  */
+interface SelectOption { label: string; value: string }
+
 const SelectImpl = createA2UIComponent<{
-  label?: string; value?: any; options?: any[]; placeholder?: string; size?: string; width?: string
+  label?: string; value?: unknown; options?: SelectOption[]; placeholder?: string; size?: string; width?: string
 }>('Select', ({ label, value, options, placeholder, size, width, rawProps, dataContext }) => {
   const valuePath = getBindingPath(rawProps.value)
-  const opts: any[] = Array.isArray(options) ? options : []
+  const opts: SelectOption[] = Array.isArray(options) ? options : []
 
   return (
     <div className="flex flex-col gap-1" style={width ? { width } : undefined}>
@@ -205,7 +207,7 @@ const SelectImpl = createA2UIComponent<{
           <SelectValue placeholder={placeholder as string | undefined} />
         </SelectTrigger>
         <SelectContent>
-          {opts.map((opt: any) => (
+          {opts.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
           ))}
         </SelectContent>
@@ -242,13 +244,16 @@ const DataTableImpl = createBinderlessComponentImplementation(
     const dm = context.dataContext.dataModel
     useDataModelSubscription(dm)
 
+    interface DataTableColumn { key: string; label: string; cellType?: string; cellProps?: Record<string, unknown>; width?: string }
+    interface DataTableRow { [key: string]: unknown }
+
     const rawProps = context.componentModel.properties
     const props = resolveProps(rawProps, dm)
-    const columns: any[] = props.columns ?? []
-    const rows: any[] = Array.isArray(props.value) ? props.value : []
+    const columns: DataTableColumn[] = props.columns ?? []
+    const rows: DataTableRow[] = Array.isArray(props.value) ? props.value : []
     const rawValuePath = getBindingPath(rawProps.value)
 
-    const renderCell = (col: any, scope: { row: any; rowIndex: number }) => {
+    const renderCell = (col: DataTableColumn, scope: { row: DataTableRow; rowIndex: number }) => {
       const cellValue = scope.row[col.key]
       const cellPath = rawValuePath
         ? `${rawValuePath}/${scope.rowIndex}/${col.key}`
@@ -258,24 +263,24 @@ const DataTableImpl = createBinderlessComponentImplementation(
       switch (cellType) {
         case 'input':
           return (
-            <Input className="h-8 text-xs" value={cellValue ?? ''}
+            <Input className="h-8 text-xs" value={String(cellValue ?? '')}
               onChange={e => context.dataContext.set(cellPath, (e.target as HTMLInputElement).value)} />
           )
         case 'number':
           return (
-            <Input type="number" className="h-8 text-xs" value={cellValue ?? ''}
+            <Input type="number" className="h-8 text-xs" value={Number(cellValue ?? 0)}
               onChange={e => context.dataContext.set(cellPath, Number((e.target as HTMLInputElement).value))} />
           )
         case 'select': {
-          let options = col.cellProps?.options ?? []
-          if (typeof options === 'string') {
-            try { options = JSON.parse(options) } catch { options = [] }
+          let options: SelectOption[] = (col.cellProps?.options as SelectOption[]) ?? []
+          if (typeof col.cellProps?.options === 'string') {
+            try { options = JSON.parse(col.cellProps.options) } catch { options = [] }
           }
           return (
-            <Select value={cellValue ?? ''} onValueChange={val => context.dataContext.set(cellPath, val)}>
+            <Select value={String(cellValue ?? '')} onValueChange={val => context.dataContext.set(cellPath, val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {options.map((opt: any) => (
+                {options.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -291,7 +296,7 @@ const DataTableImpl = createBinderlessComponentImplementation(
       <Table>
         <TableHeader>
           <TableRow>
-            {columns.map((col: any) => (
+            {columns.map((col) => (
               <TableHead key={col.key} style={{ width: col.width }}>{col.label || col.key}</TableHead>
             ))}
           </TableRow>
@@ -304,9 +309,9 @@ const DataTableImpl = createBinderlessComponentImplementation(
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row: any, rowIndex: number) => (
-              <TableRow key={row.id ?? rowIndex}>
-                {columns.map((col: any) => (
+            rows.map((row, rowIndex) => (
+              <TableRow key={String(row.id ?? rowIndex)}>
+                {columns.map((col) => (
                   <TableCell key={col.key}>{renderCell(col, { row, rowIndex })}</TableCell>
                 ))}
               </TableRow>

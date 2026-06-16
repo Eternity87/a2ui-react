@@ -31,24 +31,14 @@ import type { DataModel } from '@a2ui/web_core/v0_9'
 import type { PipeEngine } from './pipe-engine'
 import { dmPath, safeEvalExpression } from './a2ui-utils'
 import { logger } from '@/lib/logger'
+import type { Action, ReactionDef } from '@/types/a2ui-types'
 
 // ================================================================
 //  ReactionEngine
 // ================================================================
 
-interface Reaction {
-  id: string
-  when: { field: string; event: string }
-  then: Action[]
-}
-
-interface Action {
-  type: string
-  [key: string]: any
-}
-
 interface ExecutionContext {
-  trigger?: { newVal: any; oldVal: any }
+  trigger?: { newVal: unknown; oldVal: unknown }
   lastResponse: unknown
 }
 
@@ -59,11 +49,11 @@ interface SharedStoreApi {
 }
 
 interface ReactionServices {
-  apiExecutor: (req: { url: string; method: string; params?: any; body?: any }) => Promise<{ data: any }>
+  apiExecutor: (req: { url: string; method: string; params?: Record<string, any>; body?: Record<string, any> }) => Promise<{ data: any }>
   pipeEngine: PipeEngine
   toast: (msg: string, type?: string) => void
   /** 跨页面导航（由 PageProvider 注入） */
-  navigate?: (pageId: string, params: Record<string, any>) => void
+  navigate?: (pageId: string, params: Record<string, unknown>) => void
   /** Zustand shared store（用于 /shared/ 路径拦截） */
   sharedStore?: SharedStoreApi
   /** 父页面 DataModel（用于子 surface 的 /parent/ 路径写回父 DataModel） */
@@ -83,15 +73,19 @@ export class ReactionEngine {
   private previousValues = new Map<string, any>()
   private static MAX_PREVIOUS_VALUES = 200
   private scheduledTimers: ReturnType<typeof setInterval>[] = []
-  private unloadReactions: Reaction[] = []
+  private unloadReactions: ReactionDef[] = []
+  private booted = false
 
   constructor(
     private dataModel: DataModel,
-    private reactions: Reaction[],
+    private reactions: ReactionDef[],
     private services: ReactionServices,
   ) {}
 
+  /** 启动引擎（订阅 change 事件、执行 init reactions）。重复调用安全——仅首次生效。 */
   boot() {
+    if (this.booted) return
+    this.booted = true
     for (const r of this.reactions) {
       if (r.when.event === 'init') {
         // init 事件：下一个微任务执行一次
@@ -128,6 +122,8 @@ export class ReactionEngine {
   }
 
   destroy() {
+    this.booted = false
+
     // 执行 unload 事件（同步执行，不 await）
     for (const r of this.unloadReactions) {
       try { this.executeChain(r) } catch (e) { /* unload 不抛错 */ }
@@ -146,7 +142,7 @@ export class ReactionEngine {
   // ===== 路径拦截：/shared/ /navParams/ /parent/ → 不同目标 =====
 
   /** 解析值：/shared/ /navParams/ → Zustand，/parent/ → 父 DataModel，其他走自身 DataModel */
-  private resolveValue(pointer: string): any {
+  private resolveValue(pointer: string): unknown {
     if (pointer.startsWith('/shared/') || pointer.startsWith('/navParams/')) {
       const store = this.services.sharedStore
       if (!store) return undefined
@@ -168,7 +164,7 @@ export class ReactionEngine {
   }
 
   /** 写入值：/shared/ → Zustand，/parent/ → 父 DataModel，其他走自身 DataModel */
-  private setValue(pointer: string, value: any) {
+  private setValue(pointer: string, value: unknown) {
     if (pointer.startsWith('/shared/')) {
       const key = pointer.replace('/shared/', '')
       // 基本校验：shared store 只接受可序列化的纯数据，拒绝函数/类实例
@@ -202,7 +198,7 @@ export class ReactionEngine {
   // ===== 动作链执行 =====
 
   /** 顺序执行 Reaction 的 then 动作链（await 保证顺序） */
-  private async executeChain(reaction: Reaction, trigger?: { newVal: any; oldVal: any }) {
+  private async executeChain(reaction: ReactionDef, trigger?: { newVal: any; oldVal: any }) {
     const ctx: ExecutionContext = { trigger, lastResponse: null }
     try {
       for (const action of reaction.then) {
@@ -217,7 +213,7 @@ export class ReactionEngine {
   }
 
   /** 执行单个 Action */
-  private async executeAction(action: Action, ctx: any) {
+  private async executeAction(action: Action, ctx: ExecutionContext) {
     switch (action.type) {
       case 'apiRequest': {
         // 解析参数中的路径引用
@@ -354,7 +350,7 @@ export class ReactionEngine {
 }
 
 /** 检查值是否可安全序列化（纯数据，非函数/类实例） */
-function isSerializableValue(v: any): boolean {
+function isSerializableValue(v: unknown): boolean {
   if (v === null || v === undefined) return true
   const t = typeof v
   if (t === 'function' || t === 'symbol') return false

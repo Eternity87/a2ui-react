@@ -119,14 +119,6 @@ function getByPointer(dm: DataModel, pointer: string): any {
   return dm.get(dmPath(pointer))
 }
 
-/** 解析单个值：如果是 { path } DataBinding 则查 dataModel，否则原样返回 */
-function resolveDynamicValue(value: any, dm: DataModel): any {
-  if (typeof value === 'object' && value !== null && 'path' in value) {
-    return getByPointer(dm, value.path)
-  }
-  return value
-}
-
 /**
  * 解析组件 props 中的标准 DynamicValue 引用
  *
