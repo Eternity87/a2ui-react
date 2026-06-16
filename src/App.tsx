@@ -178,7 +178,7 @@ function PreviewInner() {
           <div className="p-3 space-y-3 overflow-y-auto flex-1">
             <div>
               <label className="text-xs text-gray-500">提供商</label>
-              <Select value={provider} onValueChange={v => { setProvider(v as any); setApiKey(defaultKeys[v] ?? '') }}>
+              <Select value={provider} onValueChange={v => { setProvider(v as AgentConfig['provider']); setApiKey(defaultKeys[v] ?? '') }}>
                 <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mock">Mock (无需 Key)</SelectItem>
@@ -323,6 +323,7 @@ function PageRenderer({
   useEffect(() => {
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
+        if (!currentPageId) return
         const surface = a2ui.getSurface(currentPageId)
         if (action.context.clickData && surface) {
           // 统一取 payload（recharts 所有图形元素的原始数据都在 payload 中）

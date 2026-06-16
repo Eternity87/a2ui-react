@@ -6,6 +6,7 @@
  */
 
 import { buildSystemPrompt, buildFullPrompt } from './prompt-builder'
+import { logger } from '@/lib/logger'
 import demoOutput from '../demo.json'
 
 export interface AgentConfig {
@@ -129,7 +130,11 @@ function repairJson(text: string): string | null {
     .replace(/\/\/.*$/gm, '')        // 单行注释
     .replace(/\/\*[\s\S]*?\*\//g, '') // 多行注释
     .replace(/,\s*([}\]])/g, '$1')    // 尾部逗号
-    .replace(/'/g, '"')               // 单引号 → 双引号（朴素替换）
+  // 单引号 → 双引号（仅替换 JSON 结构位置的引号，不触碰字符串内容中的引号）
+  // Pass 1: 单引号 key → 双引号（关闭引号后紧跟 :）
+  repaired = repaired.replace(/'([^']*?)'(?=\s*:)/g, '"$1"')
+  // Pass 2: 单引号 value → 双引号（开启引号前有 { [ , : 等结构字符）
+  repaired = repaired.replace(/([\[{,:]\s*)'([^']*?)'/g, '$1"$2"')
 
   // 补齐截断的括号
   let openBraces = 0, openBrackets = 0
@@ -170,7 +175,7 @@ function validateOutput(data: any): AgentResult {
     }
     const firstMsg = firstPage.a2ui[0]
     if (!firstMsg || !('beginRendering' in firstMsg)) {
-      console.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
+      logger.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
       firstPage.a2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...firstPage.a2ui]
     }
     // 合并 shared.dataModel 到第一页的 updateDataModel 消息末尾
@@ -192,7 +197,7 @@ function validateOutput(data: any): AgentResult {
 
   const firstMsg = data.a2ui[0]
   if (!firstMsg || !('beginRendering' in firstMsg)) {
-    console.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
+    logger.warn('[AgentClient] 第一条消息不是 beginRendering，已自动修正')
     data.a2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...data.a2ui]
   }
 

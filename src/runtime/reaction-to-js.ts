@@ -10,6 +10,11 @@ interface Action {
   [key: string]: any
 }
 
+interface ConditionAction extends Action {
+  type: 'condition'
+  branches: { if?: string; then: Action[] }[]
+}
+
 interface Reaction {
   id: string
   when: { field: string; event: string }
@@ -123,7 +128,7 @@ function setValuesToJS(action: Action, depth: number): string[] {
 function conditionToJS(action: Action, depth: number): string[] {
   const pad = INDENT.repeat(depth)
   const lines: string[] = []
-  const branches = action.branches as any[] ?? []
+  const branches = (action as ConditionAction).branches ?? []
 
   for (let i = 0; i < branches.length; i++) {
     const branch = branches[i]

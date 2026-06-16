@@ -147,7 +147,7 @@ export const componentCatalog: Record<string, ComponentDef> = {
     props: {
       open: { type: 'DynamicBoolean', required: true, description: '控制弹窗显隐的 DataBinding { path }，值为 true 时打开', tier: 'core' },
       title: { type: 'string', description: '弹窗标题', tier: 'common' },
-      source: { type: 'string', required: true, description: '子页面来源：本地 children key（如 "confirmDialog"）或远程 URL', tier: 'core' },
+      source: { type: 'string', required: true, description: '子页面来源：本地 children key 或 https:// / localhost 远程 URL', tier: 'core' },
       width: { type: 'string', defaultValue: 'max-w-lg', description: '弹窗宽度 CSS class（如 max-w-lg / max-w-2xl / max-w-4xl）', tier: 'styling' },
     },
   },

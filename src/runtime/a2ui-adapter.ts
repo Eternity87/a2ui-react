@@ -20,6 +20,8 @@
  * Agent JSON → detectFormat() → legacyToV09() / 透传 → MessageProcessor.processMessages()
  */
 
+import { logger } from '@/lib/logger'
+
 // ---- 类型定义 ----
 
 /** Agent 生成的简化格式消息 */
@@ -220,7 +222,7 @@ function convertComponent(comp: any): any | null {
   const [typeName, v08Props] = Object.entries(comp.component)[0] as [string, any]
   const v09Type = COMPONENT_MAP[typeName]
   if (!v09Type) {
-    console.warn(`[v08ToV09] Unknown component type: ${typeName}, skipping`)
+    logger.warn(`[v08ToV09] Unknown component type: ${typeName}, skipping`)
     return null
   }
 
@@ -402,9 +404,10 @@ export function ensureRootComponent(comps: any[]): any[] {
   const inTree = new Set<string>()
   const collectTree = (id: string) => {
     if (inTree.has(id)) return
-    inTree.add(id)
     const comp = comps.find(c => c.id === id)
-    if (comp && Array.isArray(comp.children)) {
+    if (!comp) return // 组件不存在则不加入 visited，避免悬空引用污染集合
+    inTree.add(id)
+    if (Array.isArray(comp.children)) {
       for (const cid of comp.children) collectTree(cid)
     }
   }

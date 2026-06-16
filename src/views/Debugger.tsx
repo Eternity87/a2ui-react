@@ -51,6 +51,7 @@ import { basicSetup } from 'codemirror'
 import { reactionToJS } from '@/runtime/reaction-to-js'
 import { executeScript, validateScript } from '@/runtime/script-engine'
 import { MockPushSimulator } from '@/mock/push-simulator'
+import { logger } from '@/lib/logger'
 
 // ===== 工具 =====
 
@@ -67,7 +68,7 @@ function normalizeV08Components(comps: any[]): any[] {
     if (typeof c.component !== 'object' || !c.component) return c // 非 v0.8，直接返回
     const [typeName, v08Props] = Object.entries(c.component)[0] as [string, any]
     const v09Type = V08_TYPE_MAP[typeName]
-    if (!v09Type) { console.warn(`[loadJson] Unknown v0.8 type: ${typeName}`); return c }
+    if (!v09Type) { logger.warn(`[loadJson] Unknown v0.8 type: ${typeName}`); return c }
     const props: Record<string, any> = {}
     for (const [key, value] of Object.entries(v08Props ?? {})) {
       if (value === undefined || value === null) continue
@@ -79,13 +80,14 @@ function normalizeV08Components(comps: any[]): any[] {
         else if ('name' in value && !('event' in value) && !('surfaceId' in value)) {
           // v0.8 action: { name, context: [{ key, value }] }
           const ctx: Record<string, any> = {}
-          if (Array.isArray(value.context)) {
-            for (const item of value.context) {
+          const v8action = value as { name: string; context?: { key: string; value: any }[] }
+          if (Array.isArray(v8action.context)) {
+            for (const item of v8action.context) {
               if (item.key) ctx[item.key] = typeof item.value === 'object' && 'literalString' in item.value
                 ? item.value.literalString : item.value
             }
           }
-          props[key] = { event: { name: value.name, context: ctx } }
+          props[key] = { event: { name: v8action.name, context: ctx } }
         } else if (key === 'child' && 'literalString' in value) {
           // v0.8 child: { literalString: "id" } → v0.9 children: ["id"]
           props.children = [value.literalString]
@@ -343,7 +345,7 @@ export function Debugger() {
       }] as any)
       setRenderKey(k => k + 1)
     } catch (err: any) {
-      console.warn('[Sync] 同步组件失败:', err?.message || err)
+      logger.warn('[Sync] 同步组件失败:', err?.message || err)
     }
   }
 
@@ -450,6 +452,14 @@ export function Debugger() {
     loadJson(demoDefault)
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 确保 currentEditPage 始终指向有效页面（防止 pages 与 currentEditPage 更新时序不一致）
+  useEffect(() => {
+    const pageIds = Object.keys(pages)
+    if (pageIds.length > 0 && !pages[currentEditPage]) {
+      setCurrentEditPage(pageIds[0])
+    }
+  }, [pages, currentEditPage])
+
   // 页面切换时清除选中
   useEffect(() => {
     setSelectedId(null)
@@ -505,21 +515,28 @@ export function Debugger() {
 
   // ===== Action 事件 → ReactionEngine / ScriptEngine =====
 
+  // ref 保存最新值，避免 effect 因 unstable 依赖频繁重建
+  const scriptsRef = useRef(scripts)
+  scriptsRef.current = scripts
+  const currentEditPageRef2 = useRef(currentEditPage)
+  currentEditPageRef2.current = currentEditPage
+
   useEffect(() => {
     return a2ui.onAction((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
         const rid = action.context.reactionId as string
-        const surface = getSurfaceRef.current(currentEditPage)
+        const pageId = currentEditPageRef2.current
+        const surface = getSurfaceRef.current(pageId)
         if (action.context.clickData && surface) {
           surface.dataModel.set('/_event', action.context.clickData?.payload ?? action.context.clickData)
         }
         // 优先执行用户自定义脚本
-        if (surface && scripts[rid]) {
+        if (surface && scriptsRef.current[rid]) {
           const pipeEngine = new PipeEngine((surface.dataModel.get('/') ?? {}) as Record<string, any>)
-          executeScript(scripts[rid], {
+          executeScript(scriptsRef.current[rid], {
             dataModel: surface.dataModel,
             pipeEngine,
-            toast: (msg, type) => setToast({ msg, type }),
+            toast: (msg, type = 'info') => setToast({ msg, type }),
             sharedStore: useSharedStore,
             navigate: (pageId, params) => {
               const targetSurface = getSurfaceRef.current(pageId)
@@ -538,7 +555,7 @@ export function Debugger() {
         }
       }
     })
-  }, [currentEditPage, a2ui.surface, scripts])
+  }, [a2ui.onAction])
 
   // ===== Toast =====
 
@@ -633,7 +650,7 @@ export function Debugger() {
             updateDataModel: { surfaceId: surface.id, path: '/', value: {} },
           }] as any)
         } catch (err: any) {
-          console.warn('[Clear] 清空 dataModel 失败:', err?.message || err)
+          logger.warn('[Clear] 清空 dataModel 失败:', err?.message || err)
         }
       }
     }
@@ -776,7 +793,7 @@ export function Debugger() {
         else if (pd.type === 'array') props[k] = []
       })
       const newComp = { id: newId, component: ds.componentType, props }
-      setComponents(prev => insertIntoTree([...prev, newComp], newId, targetId, di.position))
+      setComponents(prev => insertIntoTree([...prev, newComp], newId, targetId, di.position as 'before' | 'after' | 'inside'))
       setSelectedId(newId)
     } else if (ds.type === 'tree') {
       const movedId = ds.componentId
@@ -789,7 +806,7 @@ export function Debugger() {
           }
           return { ...c, props: { ...c.props } }
         })
-        return insertIntoTree(next, movedId, targetId, di.position)
+        return insertIntoTree(next, movedId, targetId, di.position as 'before' | 'after' | 'inside')
       })
     }
     setDragSource(null)

@@ -10,7 +10,7 @@
 
 import React, { useCallback, useSyncExternalStore, useEffect, useMemo, useRef, useState } from 'react'
 import { createBinderlessComponentImplementation, type ReactComponentImplementation } from '@a2ui/react/v0_9'
-import { Catalog } from '@a2ui/web_core/v0_9'
+import { Catalog, type ComponentApi } from '@a2ui/web_core/v0_9'
 import type { ComponentContext } from '@a2ui/web_core/v0_9'
 import { dmPath, getBindingPath, resolveProps, useDataModelSubscription } from './a2ui-utils'
 import { useA2UI } from './a2ui-context'
@@ -36,8 +36,16 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine, LabelList,
 } from 'recharts'
+import { logger } from '@/lib/logger'
 
 // ===== 类型 =====
+
+/**
+ * binderless 组件的 ComponentApi schema。
+ * 使用 binderless 模式时不依赖 Zod schema 做运行时校验，因此传入空对象占位。
+ * 参见 createBinderlessComponentImplementation API 签名。
+ */
+const BINDERLESS_SCHEMA = {} as ComponentApi['schema']
 
 /** A2uiSurface 传给每个 binderless 组件的原始 props */
 type A2UIRenderProps = {
@@ -69,7 +77,7 @@ export function createA2UIComponent<P = Record<string, any>>(
   RenderComponent: React.FC<P & A2UIComponentMeta>,
 ) {
   return createBinderlessComponentImplementation(
-    { name, schema: {} as any },
+    { name, schema: BINDERLESS_SCHEMA },
     ({ context, buildChild }: A2UIRenderProps) => {
       const dm = context.dataContext.dataModel
       const versionRef = useRef(0)
@@ -229,7 +237,7 @@ const ButtonImpl = createA2UIComponent<{
  * value（行数据）由 resolveProps 解析；columns 由 JSON 静态定义
  */
 const DataTableImpl = createBinderlessComponentImplementation(
-  { name: 'DataTable', schema: {} as any },
+  { name: 'DataTable', schema: BINDERLESS_SCHEMA },
   ({ context }: A2UIRenderProps) => {
     const dm = context.dataContext.dataModel
     useDataModelSubscription(dm)
@@ -321,6 +329,13 @@ function cssWidth(w: any): string {
   return String(w)
 }
 
+function chartContainerStyle(w: any): React.CSSProperties {
+  return { width: cssWidth(w), minWidth: 0, overflow: 'hidden' }
+}
+function chartWrapperStyle(h?: number): React.CSSProperties {
+  return { width: '100%', height: h ?? 300 }
+}
+
 const BarChartImpl = createA2UIComponent<{
   data?: any[]; xField?: string; yField?: string; title?: string; height?: number; width?: any; color?: string
   showLegend?: boolean; showTooltip?: boolean; showGrid?: boolean; showDataLabel?: boolean
@@ -328,6 +343,7 @@ const BarChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   targetValue?: number; colorAbove?: string; colorBelow?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
+  reactionId?: string
 }>('BarChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, layout, barSize, referenceValue, referenceLabel, referenceColor, targetValue, colorAbove, colorBelow, fontSize, fontFamily, chartMargin, xTickAngle, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const isVertical = layout === 'vertical'
@@ -336,9 +352,9 @@ const BarChartImpl = createA2UIComponent<{
   const ff = fontFamily ?? DEFAULT_FONT
   const m = chartMargin ?? 16
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <BarChart data={chartData} layout={isVertical ? 'vertical' : 'horizontal'} margin={{ top: m, right: m, bottom: m, left: m }}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           {isVertical ? <YAxis type="category" dataKey={xField} tick={{ fontSize: fs }} /> : <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />}
@@ -360,7 +376,7 @@ const BarChartImpl = createA2UIComponent<{
             {(showDataLabel ?? false) && <LabelList dataKey={yField} position={isVertical ? 'right' : 'top'} />}
           </Bar>
         </BarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -372,6 +388,7 @@ const LineChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
+  reactionId?: string
 }>('LineChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, showDot, strokeWidth, curveType, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
@@ -382,10 +399,10 @@ const LineChartImpl = createA2UIComponent<{
     ? (lastVal >= targetValue ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f'))
     : (color ?? '#1890ff')
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs, cursor: reactionId ? 'pointer' : undefined }}
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs, cursor: reactionId ? 'pointer' : undefined }}
       onClick={reactionId ? () => dispatchAction('a2ui.click', { reactionId, clickData: null }) : undefined}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <LineChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
@@ -395,10 +412,10 @@ const LineChartImpl = createA2UIComponent<{
           {referenceValue !== undefined && (
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
-          <Line type={(curveType as any) ?? 'monotone'} dataKey={yField} stroke={lineColor} strokeWidth={strokeWidth ?? 2} dot={showDot ?? true}
+          <Line type={((curveType ?? 'monotone') as any)} dataKey={yField} stroke={lineColor} strokeWidth={strokeWidth ?? 2} dot={showDot ?? true}
             label={(showDataLabel ?? false) ? { position: 'top' } : undefined} />
         </LineChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -410,6 +427,7 @@ const PieChartImpl = createA2UIComponent<{
   targetValue?: number; colorAbove?: string; colorBelow?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number
   labelPosition?: string; labelOffset?: number
+  reactionId?: string
 }>('PieChart', ({ data, labelField, valueField, title, height, width, colors, showLegend, showTooltip, showLabel, innerRadius, outerRadius, labelFormat, targetValue, colorAbove, colorBelow, fontSize, fontFamily, chartMargin, labelPosition, labelOffset, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const colorArr = (colors ?? '#1890ff,#52c41a,#faad14,#f5222d,#722ed1').split(',').map(c => c.trim())
@@ -429,9 +447,9 @@ const PieChartImpl = createA2UIComponent<{
     }
   }
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <PieChart margin={{ top: m, right: m, bottom: m, left: m }}>
           <Pie data={chartData} dataKey={valueField} nameKey={labelField} cx="50%" cy="50%"
             innerRadius={innerRadius ?? 0} outerRadius={outerRadius ?? 80}
@@ -450,7 +468,7 @@ const PieChartImpl = createA2UIComponent<{
           {(showTooltip ?? true) && <Tooltip contentStyle={{ fontSize: fs }} />}
           {(showLegend ?? true) && <Legend wrapperStyle={{ fontSize: fs }} />}
         </PieChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -462,7 +480,7 @@ const AreaChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
-  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+  reactionId?: string
 }>('AreaChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, strokeWidth, fillOpacity, curveType, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
@@ -473,9 +491,9 @@ const AreaChartImpl = createA2UIComponent<{
     ? (lastVal >= targetValue ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f'))
     : (color ?? '#1890ff')
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <AreaChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
@@ -485,11 +503,11 @@ const AreaChartImpl = createA2UIComponent<{
           {referenceValue !== undefined && (
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
-          <Area type={(curveType as any) ?? 'monotone'} dataKey={yField} stroke={areaColor} fill={areaColor} strokeWidth={strokeWidth ?? 2} fillOpacity={fillOpacity ?? 0.3}
+          <Area type={((curveType ?? 'monotone') as any)} dataKey={yField ?? ''} stroke={areaColor} fill={areaColor} strokeWidth={strokeWidth ?? 2} fillOpacity={fillOpacity ?? 0.3}
             label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
             onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
         </AreaChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -501,22 +519,17 @@ const ComposedChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
-  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+  reactionId?: string
 }>('ComposedChart', ({ data, xField, yField, yField2, title, height, width, color, color2, showLegend, showTooltip, showGrid, showDataLabel, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
   const m = chartMargin ?? 16
-  const lastVal = chartData.length > 0 ? Number(chartData[chartData.length - 1][yField ?? '']) : 0
-  const condColor = targetValue !== undefined && targetValue !== null
-    ? (lastVal >= targetValue ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f'))
-    : null
-  const barColor = condColor ?? (color ?? '#1890ff')
-  const lineColor2 = condColor ?? (color2 ?? '#52c41a')
+  const hasCondition = targetValue !== undefined && targetValue !== null
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <ComposedChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
@@ -527,15 +540,21 @@ const ComposedChartImpl = createA2UIComponent<{
           {referenceValue !== undefined && (
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} yAxisId="left" />
           )}
-          <Bar yAxisId="left" dataKey={yField ?? ''} fill={barColor}
+          <Bar yAxisId="left" dataKey={yField ?? ''} fill={color ?? '#1890ff'}
             onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            {hasCondition
+              ? chartData.map((item, i) => {
+                  const val = Number(item[yField ?? ''])
+                  return <Cell key={i} fill={val >= (targetValue ?? 0) ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f')} />
+                })
+              : null}
             {(showDataLabel ?? false) && <LabelList dataKey={yField} position="top" />}
           </Bar>
-          {yField2 && <Line yAxisId="right" type="monotone" dataKey={yField2} stroke={lineColor2} strokeWidth={2}
+          {yField2 && <Line yAxisId="right" type="monotone" dataKey={yField2} stroke={color2 ?? '#52c41a'} strokeWidth={2}
             label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
             onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined} />}
         </ComposedChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -547,6 +566,7 @@ const ScatterChartImpl = createA2UIComponent<{
   referenceValue?: number; referenceLabel?: string; referenceColor?: string
   fontSize?: number; fontFamily?: string; chartMargin?: number; xTickAngle?: number
   targetValue?: number; colorAbove?: string; colorBelow?: string
+  reactionId?: string
 }>('ScatterChart', ({ data, xField, yField, title, height, width, color, showLegend, showTooltip, showGrid, showDataLabel, referenceValue, referenceLabel, referenceColor, fontSize, fontFamily, chartMargin, xTickAngle, targetValue, colorAbove, colorBelow, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
@@ -556,9 +576,9 @@ const ScatterChartImpl = createA2UIComponent<{
   const aboveC = colorAbove ?? '#52c41a'
   const belowC = colorBelow ?? '#ff4d4f'
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <ScatterChart margin={{ top: m, right: m, bottom: m, left: m }}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
@@ -577,7 +597,7 @@ const ScatterChartImpl = createA2UIComponent<{
             })}
           </Scatter>
         </ScatterChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -587,16 +607,16 @@ const RadarChartImpl = createA2UIComponent<{
   height?: number; width?: any; color?: string; fillOpacity?: number; strokeWidth?: number
   showLegend?: boolean; showTooltip?: boolean
   fontSize?: number; fontFamily?: string; chartMargin?: number
-  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+  reactionId?: string
 }>('RadarChart', ({ data, nameKey, dataKey, title, height, width, color, fillOpacity, strokeWidth, showLegend, showTooltip, fontSize, fontFamily, chartMargin, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
   const m = chartMargin ?? 16
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <RadarChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
           <PolarGrid />
           <PolarAngleAxis dataKey={nameKey} tick={{ fontSize: fs }} />
@@ -606,7 +626,7 @@ const RadarChartImpl = createA2UIComponent<{
           <Radar name={title ?? ''} dataKey={dataKey ?? ''} stroke={color ?? '#1890ff'} fill={color ?? '#1890ff'} fillOpacity={fillOpacity ?? 0.3} strokeWidth={strokeWidth ?? 2}
             onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
         </RadarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -617,7 +637,7 @@ const RadialBarChartImpl = createA2UIComponent<{
   innerRadius?: number; outerRadius?: number
   showLegend?: boolean; showTooltip?: boolean
   fontSize?: number; fontFamily?: string; chartMargin?: number
-  reactionId?: string; dispatchAction?: (name: string, context?: any) => void
+  reactionId?: string
 }>('RadialBarChart', ({ data, nameKey, valueKey, title, height, width, colors, innerRadius, outerRadius, showLegend, showTooltip, fontSize, fontFamily, chartMargin, reactionId, dispatchAction }) => {
   const chartData = Array.isArray(data) ? data : []
   const colorArr = (colors ?? '#1890ff,#52c41a,#faad14,#f5222d,#722ed1').split(',').map(c => c.trim())
@@ -625,9 +645,9 @@ const RadialBarChartImpl = createA2UIComponent<{
   const ff = fontFamily ?? DEFAULT_FONT
   const m = chartMargin ?? 16
   return (
-    <div style={{ width: cssWidth(width), fontFamily: ff, fontSize: fs }}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
-      <ResponsiveContainer width="100%" height={height ?? 300}>
+      <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
         <RadialBarChart data={chartData} innerRadius={innerRadius ?? 30} outerRadius={outerRadius ?? 120} margin={{ top: m, right: m, bottom: m, left: m }}>
           <PolarAngleAxis type="number" tick={{ fontSize: fs }} />
           <PolarRadiusAxis angle={30} type="category" dataKey={nameKey} tick={{ fontSize: fs }} />
@@ -640,7 +660,7 @@ const RadialBarChartImpl = createA2UIComponent<{
             ))}
           </RadialBar>
         </RadialBarChart>
-      </ResponsiveContainer>
+      </ResponsiveContainer></div>
     </div>
   )
 })
@@ -666,7 +686,7 @@ const StatCardImpl = createA2UIComponent<{
   const displayValue = value !== undefined && value !== null ? String(value) : '--'
 
   return (
-    <div style={{ width: cssWidth(width), height: height ?? 150, fontFamily: ff }}>
+    <div style={{ ...chartContainerStyle(width), height: height ?? 150, fontFamily: ff }}>
       <Card className="h-full">
         <CardContent className="flex flex-col justify-between h-full p-4">
           {/* 指标名称 */}
@@ -694,7 +714,7 @@ const StatCardImpl = createA2UIComponent<{
             )}
             {sparkData.length > 0 && (
               <div className="flex-1 min-w-0" style={{ height: 36 }}>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
                   <LineChart data={sparkData}>
                     <Line type="monotone" dataKey="v" stroke={trendColor} strokeWidth={2} dot={false} />
                   </LineChart>
@@ -711,7 +731,7 @@ const StatCardImpl = createA2UIComponent<{
 // ===== Dashboard 网格布局容器 =====
 
 const DashboardImpl = createBinderlessComponentImplementation(
-  { name: 'Dashboard', schema: {} as any },
+  { name: 'Dashboard', schema: BINDERLESS_SCHEMA },
   ({ context, buildChild }: A2UIRenderProps) => {
     const dm = context.dataContext.dataModel
     useDataModelSubscription(dm)
@@ -723,7 +743,7 @@ const DashboardImpl = createBinderlessComponentImplementation(
     const g = props.gap ?? 16
 
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: g }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: g, width: '100%', overflow: 'hidden' }}>
         {ids.map(id => {
           const childModel = (context as any).surfaceComponents?.get(id)
           const w = childModel?.properties?._w ?? cols
@@ -741,7 +761,7 @@ const DashboardImpl = createBinderlessComponentImplementation(
 // ===== Dialog 组件（独立子 Surface 弹窗） =====
 
 const DialogImpl = createBinderlessComponentImplementation(
-  { name: 'Dialog', schema: {} as any },
+  { name: 'Dialog', schema: BINDERLESS_SCHEMA },
   ({ context }: A2UIRenderProps) => {
     const dm = context.dataContext.dataModel
     useDataModelSubscription(dm)
@@ -795,7 +815,7 @@ const DialogImpl = createBinderlessComponentImplementation(
               child = getChildPage(`page_${sid}`, source)
             }
             if (!child) {
-              console.warn(`[Dialog] Child page "${source}" not found in registry for surface "${sid}"`)
+              logger.warn(`[Dialog] Child page "${source}" not found in registry for surface "${sid}"`)
               setLoaded(true)
               return
             }
@@ -809,7 +829,7 @@ const DialogImpl = createBinderlessComponentImplementation(
           loadRef.current(childA2ui, { pageId: instanceId })
           setLoaded(true)
         } catch (err: any) {
-          console.error('[Dialog] Failed to load child page:', err?.message || err)
+          logger.error('[Dialog] Failed to load child page:', err?.message || err)
           setLoaded(true)
         }
       }

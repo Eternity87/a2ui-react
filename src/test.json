@@ -1,6 +1,6 @@
 {
     "pages": {
-        "page_list": {
+        "page_form": {
             "a2ui": [
                 {
                     "beginRendering": {
@@ -13,74 +13,110 @@
                         "surfaceId": "main",
                         "components": [
                             {
-                                "id": "card",
-                                "component": "Card",
-                                "title": "订单列表",
-                                "children": [
-                                    "searchRow",
-                                    "orderTable"
-                                ]
-                            },
-                            {
-                                "id": "searchRow",
+                                "id": "root",
                                 "component": "Row",
-                                "gap": 8,
-                                "children": [
-                                    "keywordInput",
-                                    "searchBtn"
-                                ]
+                                "props": {
+                                    "children": [
+                                        "formCol"
+                                    ]
+                                }
                             },
                             {
-                                "id": "keywordInput",
+                                "id": "formCol",
+                                "component": "Row",
+                                "props": {
+                                    "children": [
+                                        "categorySelect",
+                                        "productSelect",
+                                        "unitPriceField",
+                                        "quantityField",
+                                        "totalPriceText",
+                                        "submitBtn"
+                                    ],
+                                    "gap": 16
+                                }
+                            },
+                            {
+                                "id": "categorySelect",
+                                "component": "Select",
+                                "props": {
+                                    "label": "产品大类",
+                                    "value": {
+                                        "path": "/productCategory"
+                                    },
+                                    "options": [
+                                        {
+                                            "label": "电子产品",
+                                            "value": "electronics"
+                                        },
+                                        {
+                                            "label": "家具",
+                                            "value": "furniture"
+                                        },
+                                        {
+                                            "label": "服装",
+                                            "value": "clothing"
+                                        }
+                                    ],
+                                    "width": "300px"
+                                }
+                            },
+                            {
+                                "id": "productSelect",
+                                "component": "Select",
+                                "props": {
+                                    "label": "产品子类",
+                                    "value": {
+                                        "path": "/productId"
+                                    },
+                                    "options": {
+                                        "path": "/productOptions"
+                                    },
+                                    "width": "300px"
+                                }
+                            },
+                            {
+                                "id": "unitPriceField",
                                 "component": "TextField",
-                                "label": "关键词",
-                                "value": {
-                                    "path": "/keyword"
-                                },
-                                "placeholder": "订单号/产品名"
+                                "props": {
+                                    "label": "单价",
+                                    "value": {
+                                        "path": "/unitPrice"
+                                    },
+                                    "type": "number",
+                                    "disabled": true,
+                                    "width": "150px"
+                                }
                             },
                             {
-                                "id": "searchBtn",
+                                "id": "quantityField",
+                                "component": "TextField",
+                                "props": {
+                                    "label": "数量",
+                                    "value": {
+                                        "path": "/quantity"
+                                    },
+                                    "type": "number",
+                                    "width": "150px"
+                                }
+                            },
+                            {
+                                "id": "totalPriceText",
+                                "component": "Text",
+                                "props": {
+                                    "text": "总价: ${/totalPrice} 元",
+                                    "size": "lg",
+                                    "bold": true
+                                }
+                            },
+                            {
+                                "id": "submitBtn",
                                 "component": "Button",
-                                "label": "搜索",
-                                "reactionId": "searchOrders"
-                            },
-                            {
-                                "id": "orderTable",
-                                "component": "DataTable",
-                                "value": {
-                                    "path": "/orders"
-                                },
-                                "columns": [
-                                    {
-                                        "key": "orderId",
-                                        "label": "订单号"
-                                    },
-                                    {
-                                        "key": "product",
-                                        "label": "产品"
-                                    },
-                                    {
-                                        "key": "quantity",
-                                        "label": "数量"
-                                    },
-                                    {
-                                        "key": "unitPrice",
-                                        "label": "单价"
-                                    },
-                                    {
-                                        "key": "totalPrice",
-                                        "label": "总价"
-                                    },
-                                    {
-                                        "key": "status",
-                                        "label": "状态"
-                                    },
-                                    {
-                                        "key": "createdAt",
-                                        "label": "创建时间"
-                                    }
-                                ]
+                                "props": {
+                                    "label": "提交订单",
+                                    "variant": "primary",
+                                    "reactionId": "onSubmit"
+                                }
                             }
                         ]
                     }
@@ -88,46 +124,128 @@
                 {
                     "updateDataModel": {
                         "surfaceId": "main",
-                        "path": "/keyword",
+                        "path": "/productCategory",
                         "value": ""
                     }
                 },
                 {
                     "updateDataModel": {
                         "surfaceId": "main",
-                        "path": "/rawOrders",
-                        "value": {}
+                        "path": "/productId",
+                        "value": ""
                     }
                 },
                 {
                     "updateDataModel": {
                         "surfaceId": "main",
-                        "path": "/orders",
+                        "path": "/productOptions",
                         "value": []
+                    }
+                },
+                {
+                    "updateDataModel": {
+                        "surfaceId": "main",
+                        "path": "/unitPrice",
+                        "value": 0
+                    }
+                },
+                {
+                    "updateDataModel": {
+                        "surfaceId": "main",
+                        "path": "/quantity",
+                        "value": 1
+                    }
+                },
+                {
+                    "updateDataModel": {
+                        "surfaceId": "main",
+                        "path": "/totalPrice",
+                        "value": 0
                     }
                 }
             ],
             "logic": {
                 "reactions": [
                     {
-                        "id": "initLoad",
+                        "id": "onCategoryChange",
                         "when": {
-                            "field": "/keyword",
-                            "event": "init"
+                            "field": "/productCategory",
+                            "event": "change"
                         },
                         "then": [
                             {
+                                "type": "cascade",
+                                "target": "/productId"
+                            },
+                            {
                                 "type": "apiRequest",
-                                "url": "/api/orders",
-                                "outputTo": "/rawOrders"
+                                "url": "/api/products",
+                                "params": {
+                                    "category": "/productCategory"
+                                },
+                                "outputTo": "/rawProducts"
                             },
                             {
                                 "type": "setValues",
                                 "map": {
-                                    "/orders": {
+                                    "/productOptions": {
                                         "pipe": [
                                             {
-                                                "get": "/rawOrders.list"
+                                                "get": "/rawProducts.list"
+                                            },
+                                            {
+                                                "map": "({ label: $.name, value: $.id })"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "type": "setValues",
+                                "map": {
+                                    "/unitPrice": 0,
+                                    "/totalPrice": 0
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "id": "onProductChange",
+                        "when": {
+                            "field": "/productId",
+                            "event": "change"
+                        },
+                        "then": [
+                            {
+                                "type": "apiRequest",
+                                "url": "/api/product-detail",
+                                "params": {
+                                    "id": "/productId"
+                                },
+                                "outputTo": "/rawProductDetail"
+                            },
+                            {
+                                "type": "setValues",
+                                "map": {
+                                    "/unitPrice": {
+                                        "pipe": [
+                                            {
+                                                "get": "/rawProductDetail.price"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "type": "setValues",
+                                "map": {
+                                    "/totalPrice": {
+                                        "pipe": [
+                                            {
+                                                "get": "/unitPrice"
+                                            },
+                                            {
+                                                "compute": "$value * quantity"
                                             }
                                         ]
                                     }
@@ -136,30 +254,82 @@
                         ]
                     },
                     {
-                        "id": "searchOrders",
+                        "id": "onQuantityChange",
                         "when": {
-                            "field": "searchBtn",
+                            "field": "/quantity",
+                            "event": "change"
+                        },
+                        "then": [
+                            {
+                                "type": "setValues",
+                                "map": {
+                                    "/totalPrice": {
+                                        "pipe": [
+                                            {
+                                                "get": "/unitPrice"
+                                            },
+                                            {
+                                                "compute": "$value * quantity"
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "id": "onSubmit",
+                        "when": {
+                            "field": "submitBtn",
                             "event": "click"
                         },
                         "then": [
                             {
+                                "type": "validate",
+                                "rules": [
+                                    {
+                                        "field": "/productCategory",
+                                        "required": true,
+                                        "message": "请选择产品大类"
+                                    },
+                                    {
+                                        "field": "/productId",
+                                        "required": true,
+                                        "message": "请选择产品"
+                                    },
+                                    {
+                                        "field": "/quantity",
+                                        "required": true,
+                                        "message": "请输入数量"
+                                    }
+                                ],
+                                "errorTarget": "/errors"
+                            },
+                            {
                                 "type": "apiRequest",
                                 "url": "/api/orders",
+                                "method": "POST",
                                 "params": {
-                                    "keyword": "/keyword"
+                                    "productId": "/productId",
+                                    "quantity": "/quantity",
+                                    "unitPrice": "/unitPrice"
                                 },
-                                "outputTo": "/rawOrders"
+                                "outputTo": "/rawOrder"
+                            },
+                            {
+                                "type": "toast",
+                                "message": "订单创建成功",
+                                "variant": "success"
                             },
                             {
                                 "type": "setValues",
                                 "map": {
-                                    "/orders": {
-                                        "pipe": [
-                                            {
-                                                "get": "/rawOrders.list"
-                                            }
-                                        ]
-                                    }
+                                    "/productCategory": "",
+                                    "/productId": "",
+                                    "/productOptions": [],
+                                    "/unitPrice": 0,
+                                    "/quantity": 1,
+                                    "/totalPrice": 0
                                 }
                             }
                         ]

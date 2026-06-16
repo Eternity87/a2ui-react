@@ -29,7 +29,8 @@
  * 表达式只会操作 dataModel 数据，但如果将来支持自由输入需注意沙箱化。
  */
 
-import { dmPath, validateExpression } from './a2ui-utils'
+import { dmPath, safeEvalExpression } from './a2ui-utils'
+import { logger } from '@/lib/logger'
 
 export class PipeEngine {
   /**
@@ -85,11 +86,12 @@ export class PipeEngine {
       case 'mom': {
         const curr = this.resolveValue(p?.current, current)
         const prev = this.resolveValue(p?.previous, current)
-        if (prev === 0 || prev === undefined || prev === null) return 0
+        if (prev === undefined || prev === null) return 0
+        if (prev === 0) return curr > 0 ? Infinity : (curr < 0 ? -Infinity : 0)
         return ((curr - prev) / Math.abs(prev)) * 100
       }
       default:
-        console.warn(`[PipeEngine] Unknown step: ${step.type}`)
+        logger.warn(`[PipeEngine] Unknown step: ${step.type}`)
         return current
     }
   }
@@ -101,18 +103,14 @@ export class PipeEngine {
   }
 
   /**
-   * 安全求解 JavaScript 表达式
-   * 变量通过函数参数注入，避免 eval 直接访问外部作用域
+   * 在白名单沙箱中安全求解表达式
+   * 变量通过 Proxy 沙箱注入，阻止访问 window/document/fetch 等危险全局对象
    */
   private eval(expr: string, vars: Record<string, any>): any {
     try {
-      validateExpression(expr, 'PipeEngine.eval')
-      const keys = Object.keys(vars)
-      const values = Object.values(vars)
-      const fn = new Function(...keys, `"use strict"; return (${expr})`)
-      return fn(...values)
+      return safeEvalExpression(expr, vars)
     } catch (err) {
-      console.error(`[PipeEngine] Eval failed: "${expr}"`, err)
+      logger.error(`[PipeEngine] Eval failed: "${expr}"`, err)
       return undefined
     }
   }

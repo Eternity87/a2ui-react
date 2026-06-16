@@ -1,3 +1,5 @@
+import { logger } from '@/lib/logger'
+
 // 模拟产品数据
 const products = [
   { id: 'P001', name: '笔记本电脑', price: 5999, unit: '台', stock: 50, status: 'active', category: 'ELECTRONICS' },
@@ -227,7 +229,7 @@ export function createMockApiExecutor() {
 
 /**
  * 获取页面 JSON（供 Dialog 组件远程加载子页面）
- * /api/ 路径走 mock executor，http/https 走真实 fetch
+ * /api/ 路径走 mock executor，https:// 及 localhost 走真实 fetch
  */
 export async function fetchPageSource(source: string): Promise<{
   a2ui: any[]
@@ -242,19 +244,21 @@ export async function fetchPageSource(source: string): Promise<{
       return null
     }
   }
-  if (!source.startsWith('https://')) {
-    console.error(`[fetchPageSource] Only https:// URLs are allowed, got: ${source}`)
+  const isSecureRemote = source.startsWith('https://')
+  const isLocalDev = source.startsWith('http://localhost') || source.startsWith('http://127.0.0.1')
+  if (!isSecureRemote && !isLocalDev) {
+    logger.error(`[fetchPageSource] Only https:// and localhost URLs are allowed, got: ${source}`)
     return null
   }
   try {
     const resp = await fetch(source)
     if (!resp.ok) {
-      console.error(`[fetchPageSource] HTTP ${resp.status}: ${resp.statusText}`)
+      logger.error(`[fetchPageSource] HTTP ${resp.status}: ${resp.statusText}`)
       return null
     }
     return await resp.json()
   } catch (err: any) {
-    console.error(`[fetchPageSource] Failed: ${err?.message || err}`)
+    logger.error(`[fetchPageSource] Failed: ${err?.message || err}`)
     return null
   }
 }

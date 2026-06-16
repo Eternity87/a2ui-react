@@ -30,7 +30,7 @@ import type { ReactComponentImplementation } from '@a2ui/react/v0_9'
 interface A2UIContextValue {
   processor: MessageProcessor<ReactComponentImplementation>
   /** 所有已加载的 surface（按 surfaceId 索引） */
-  surfaces: ReadonlyMap<string, SurfaceModel<ReactComponentImplementation>>
+  surfaces: Record<string, SurfaceModel<ReactComponentImplementation>>
   /** 获取指定 surface */
   getSurface: (id: string) => SurfaceModel<ReactComponentImplementation> | null
   /** 当前活动的 surfaceId */
@@ -95,6 +95,7 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
   const [version, setVersion] = useState(0)
   const [currentSurfaceId, setCurrentSurfaceId] = useState('main')
   const surfacesRef = useRef<Map<string, SurfaceModel<ReactComponentImplementation>>>(new Map())
+  const [surfaces, setSurfaces] = useState<Record<string, SurfaceModel<ReactComponentImplementation>>>({})
   const dmSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map())
   const toastHandlerRef = useRef<(msg: string, type?: string) => void>(console.error)
 
@@ -116,6 +117,7 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
     // surface 创建 → 加入 surfaces map + 建立 dataModel 订阅
     p.model.onSurfaceCreated.subscribe((s: SurfaceModel<ReactComponentImplementation>) => {
       surfacesRef.current.set(s.id, s)
+      setSurfaces(prev => ({ ...prev, [s.id]: s }))
       // 清理旧订阅
       dmSubsRef.current.get(s.id)?.unsubscribe()
       // 订阅该 surface 根路径变化 → 触发 version 递增 → React 重渲染
@@ -128,6 +130,11 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
       dmSubsRef.current.get(sid)?.unsubscribe()
       dmSubsRef.current.delete(sid)
       surfacesRef.current.delete(sid)
+      setSurfaces(prev => {
+        const next = { ...prev }
+        delete next[sid]
+        return next
+      })
       setVersion(v => v + 1)
     })
 
@@ -204,7 +211,7 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
 
   const value = useMemo<A2UIContextValue>(() => ({
     processor,
-    surfaces: surfacesRef.current,
+    surfaces,
     getSurface,
     currentSurfaceId,
     setCurrentSurfaceId,
@@ -220,7 +227,7 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
     toast,
     setToastHandler,
   }), [
-    processor, getSurface, currentSurfaceId, setCurrentSurfaceId,
+    processor, surfaces, getSurface, currentSurfaceId, setCurrentSurfaceId,
     load, getComponents, getDataModel, subscribeDataModel,
     setDataValue, destroySurface, onAction, version,
     toast, setToastHandler,

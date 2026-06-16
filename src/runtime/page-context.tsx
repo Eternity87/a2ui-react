@@ -18,6 +18,7 @@ import React, {
   createContext, useContext, useState, useCallback, useRef, useEffect,
 } from 'react'
 import { useA2UI } from './a2ui-context'
+import { logger } from '@/lib/logger'
 import { normalizeToPages, rewriteSurfaceId, type NormalizedPages, type PageDef } from './a2ui-adapter'
 import { useSharedStore } from './shared-store'
 
@@ -130,7 +131,7 @@ export function PageProvider({ data, children }: PageProviderProps) {
   const navigateTo = useCallback((pageId: string, params?: Record<string, any>) => {
     if (navigatingRef.current) return
     if (!data.pages[pageId]) {
-      console.warn(`[PageContext] Unknown page: ${pageId}`)
+      logger.warn(`[PageContext] Unknown page: ${pageId}`)
       return
     }
 

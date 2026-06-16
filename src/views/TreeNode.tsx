@@ -135,7 +135,7 @@ export function TreeNode({
               onDragLeave={onDragLeave}
               onDrop={e => { e.preventDefault(); e.stopPropagation(); onColumnDrop?.(e, col.virtualId) }}
             >
-              {dropIndicator?.targetId === col.virtualId && (
+              {dropIndicator && dropIndicator.targetId === col.virtualId && (
                 <>
                   {dropIndicator.position === 'before' && <div className="drop-line drop-line-before" />}
                   {dropIndicator.position === 'after' && <div className="drop-line drop-line-after" />}

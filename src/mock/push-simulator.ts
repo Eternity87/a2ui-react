@@ -7,6 +7,7 @@
 
 import type { MessageProcessor } from '@a2ui/web_core/v0_9'
 import type { ReactComponentImplementation } from '@a2ui/react/v0_9'
+import { logger } from '@/lib/logger'
 
 interface PushField {
   /** dataModel 路径 */
@@ -67,16 +68,16 @@ export class MockPushSimulator {
       try {
         this.processor.processMessages(messages as any)
       } catch (e: any) {
-        console.warn('[MockPush] processMessages 失败:', e?.message || e)
+        logger.warn('[MockPush] processMessages 失败:', e?.message || e)
       }
     }, this.config.interval)
-    console.log(`[MockPush] 已启动，每 ${this.config.interval / 1000}s 推送 ${this.config.fields.length} 个 KPI 字段`)
+    logger.info(`[MockPush] 已启动，每 ${this.config.interval / 1000}s 推送 ${this.config.fields.length} 个 KPI 字段`)
   }
 
   stop() {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
-    console.log('[MockPush] 已停止')
+    logger.info('[MockPush] 已停止')
   }
 
   /** 手动推送一次（用于调试） */

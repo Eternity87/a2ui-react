@@ -17,6 +17,7 @@
 
 import type { MessageProcessor } from '@a2ui/web_core/v0_9'
 import type { ReactComponentImplementation } from '@a2ui/react/v0_9'
+import { logger } from '@/lib/logger'
 
 interface LiveTransportOptions {
   /** 连接成功回调 */
@@ -67,7 +68,7 @@ export class LiveTransport {
     try {
       this.ws = new WebSocket(this.url)
     } catch (e) {
-      console.error('[LiveTransport] WebSocket 创建失败:', e)
+      logger.error('[LiveTransport] WebSocket 创建失败:', e)
       this.scheduleReconnect()
       return
     }
@@ -86,7 +87,7 @@ export class LiveTransport {
         const messages = Array.isArray(data) ? data : [data]
         this.processor.processMessages(messages as any)
       } catch (err: any) {
-        console.error('[LiveTransport] 消息处理失败:', err?.message || err)
+        logger.error('[LiveTransport] 消息处理失败:', err?.message || err)
       }
     }
 
@@ -133,7 +134,7 @@ export class LiveTransport {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     this.reconnectTimer = setTimeout(() => {
       this.reconnectCount++
-      console.log(`[LiveTransport] 重连 (${this.reconnectCount})...`)
+      logger.info(`[LiveTransport] 重连 (${this.reconnectCount})...`)
       this.connect()
     }, this.opts.reconnectInterval)
   }
@@ -142,7 +143,10 @@ export class LiveTransport {
     this.stopHeartbeat()
     this.heartbeatTimer = setInterval(() => {
       if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send('ping')
+        // 应用层心跳（非协议级 Ping frame）
+        // 浏览器 WebSocket API 不暴露 opcode 0x9 Ping 帧发送能力，
+        // 后端需按应用层消息处理：收到 {"type":"ping"} 应回复 {"type":"pong"}
+        this.ws.send(JSON.stringify({ type: 'ping' }))
       }
     }, this.opts.heartbeat)
   }

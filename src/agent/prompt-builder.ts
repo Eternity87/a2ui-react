@@ -6,7 +6,7 @@
 
 import { componentCatalog } from '../catalogs/component-catalog'
 import { actionRegistry } from '../catalogs/action-registry'
-import { apiCatalog } from '../catalogs/api-catalog'
+import { apiCatalog, type ApiDef } from '../catalogs/api-catalog'
 
 // ===== 核心 DSL 规范（固定部分） =====
 
@@ -471,12 +471,12 @@ ${rows.join('\n')}
 // ===== API 清单 =====
 
 function buildApiSection(): string {
-  const rows = (apiCatalog as unknown as any[]).map((api: any) => {
+  const rows = apiCatalog.map((api: ApiDef) => {
     const params = api.params
-      ? Object.entries(api.params).map(([k, v]: [string, any]) => `${k}: ${v.type}${v.required ? '(必填)' : ''} — ${v.description}`).join('<br>')
+      ? Object.entries(api.params).map(([k, v]) => `${k}: ${v.type}${v.required ? '(必填)' : ''} — ${v.description}`).join('<br>')
       : '-'
     const body = api.body
-      ? Object.entries(api.body).map(([k, v]: [string, any]) => `${k}: ${v.type}${v.required ? '(必填)' : ''} — ${v.description}`).join('<br>')
+      ? Object.entries(api.body).map(([k, v]) => `${k}: ${v.type}${v.required ? '(必填)' : ''} — ${v.description}`).join('<br>')
       : '-'
     const respFields = api.responseExample ? Object.keys(api.responseExample).join(', ') : '-'
     return `| ${api.method} | \`${api.url}\` | ${api.description} | ${params} | ${body} | ${respFields} |`
@@ -606,8 +606,6 @@ ${buildMultiPageSection()}
 
 ${buildExecutionModel()}
 
-${typeSection}
-
 ${buildComponentSection()}
 
 ${buildActionSection()}
@@ -639,8 +637,8 @@ export function buildCompactPrompt(userRequirement: string): string {
     .map(([n, d]) => `| ${n} | ${d.category} | ${d.description} |`)
     .join('\n')
 
-  const apiTable = (apiCatalog as unknown as any[])
-    .map((a: any) => `| ${a.method} ${a.url} | ${a.description} | ${Object.keys(a.responseExample || {}).join(', ')} |`)
+  const apiTable = apiCatalog
+    .map((a: ApiDef) => `| ${a.method} ${a.url} | ${a.description} | ${Object.keys(a.responseExample || {}).join(', ')} |`)
     .join('\n')
 
   return `生成 A2UI + Logic JSON。只输出 JSON，无解释。

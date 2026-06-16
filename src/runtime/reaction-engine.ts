@@ -29,7 +29,8 @@
 
 import type { DataModel } from '@a2ui/web_core/v0_9'
 import type { PipeEngine } from './pipe-engine'
-import { dmPath, validateExpression } from './a2ui-utils'
+import { dmPath, safeEvalExpression } from './a2ui-utils'
+import { logger } from '@/lib/logger'
 
 // ================================================================
 //  ReactionEngine
@@ -44,6 +45,11 @@ interface Reaction {
 interface Action {
   type: string
   [key: string]: any
+}
+
+interface ExecutionContext {
+  trigger?: { newVal: any; oldVal: any }
+  lastResponse: unknown
 }
 
 /** Zustand store 的最小接口（ReactionEngine 只用 getState/setState） */
@@ -167,10 +173,10 @@ export class ReactionEngine {
       const key = pointer.replace('/shared/', '')
       // 基本校验：shared store 只接受可序列化的纯数据，拒绝函数/类实例
       if (!isSerializableValue(value)) {
-        console.warn(`[ReactionEngine] Ignored non-serializable value for /shared/${key}`)
+        logger.warn(`[ReactionEngine] Ignored non-serializable value for /shared/${key}`)
         return
       }
-      this.services.sharedStore?.setState({ [key]: value } as any)
+      this.services.sharedStore?.setState({ [key]: value } as Partial<Record<string, unknown>>)
       return
     }
     if (pointer.startsWith('/parent/') && this.services.parentDataModel) {
@@ -197,14 +203,14 @@ export class ReactionEngine {
 
   /** 顺序执行 Reaction 的 then 动作链（await 保证顺序） */
   private async executeChain(reaction: Reaction, trigger?: { newVal: any; oldVal: any }) {
-    const ctx = { trigger, lastResponse: null as any }
+    const ctx: ExecutionContext = { trigger, lastResponse: null }
     try {
       for (const action of reaction.then) {
         await this.executeAction(action, ctx)
       }
     } catch (err: any) {
       if (err?.message !== 'validation_failed') {
-        console.error(`[ReactionEngine] "${reaction.id}" failed:`, err?.message || err)
+        logger.error(`[ReactionEngine] "${reaction.id}" failed:`, err?.message || err)
         this.services.toast(`操作失败: ${err?.message || '未知错误'}`, 'error')
       }
     }
@@ -276,7 +282,7 @@ export class ReactionEngine {
         break
       case 'navigate': {
         if (!this.services.navigate) {
-          console.warn('[ReactionEngine] navigate action ignored: no navigate callback registered')
+          logger.warn('[ReactionEngine] navigate action ignored: no navigate callback registered')
           break
         }
         const resolved: Record<string, any> = {}
@@ -306,7 +312,7 @@ export class ReactionEngine {
         const timer = setInterval(() => {
           for (const a of action.then ?? []) {
             this.executeAction(a, ctx).catch(e => {
-              console.warn(`[ReactionEngine] schedule action failed:`, e?.message || e)
+              logger.warn(`[ReactionEngine] schedule action failed:`, e?.message || e)
             })
           }
         }, interval)
@@ -330,20 +336,19 @@ export class ReactionEngine {
    */
   private evalCondition(expr: string): boolean {
     try {
-      validateExpression(expr, 'evalCondition')
-      // Step 1: 替换 $xxx 和 shared.xxx 模式
+      // Step 1: 替换 $xxx 和 shared.xxx 模式为 JSON 字面量
       const resolved = expr
         .replace(/\$?shared\.([\w]+)/g, (_, key: string) => {
           const state = this.services.sharedStore?.getState() as Record<string, any>
           return JSON.stringify(state?.[key])
         })
         .replace(/\$([\w][\w.]*)/g, (_, path: string) => {
-          // $ 前缀（非 shared）→ DataModel
           if (path.startsWith('shared.')) return '_already_handled_'
           const val = this.dataModel.get(dmPath(`/${path.replace(/\./g, '/')}`))
           return JSON.stringify(val)
         })
-      return new Function(`"use strict"; return (${resolved})`)()
+      // Step 2: 在白名单沙箱中求值（变量已内联为字面量，无自由变量）
+      return safeEvalExpression(resolved)
     } catch { return false }
   }
 }

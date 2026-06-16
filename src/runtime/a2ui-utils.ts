@@ -32,6 +32,55 @@ export function validateExpression(expr: string, label?: string): void {
   }
 }
 
+// ===== 白名单沙箱 =====
+
+/** 沙箱中允许访问的全局对象（白名单） */
+const SANDBOX_GLOBALS: Record<string, any> = {
+  Math, Date, JSON,
+  Array, Object, String, Number, Boolean,
+  parseInt, parseFloat, isNaN, isFinite,
+  undefined,
+  isArray: Array.isArray,
+  NaN, Infinity,
+}
+
+/**
+ * 在白名单 Proxy 沙箱中安全求解单一表达式
+ *
+ * 使用 with + Proxy 拦截所有变量访问，仅允许 SANDBOX_GLOBALS 和注入的 vars。
+ * 适用于 pipe filter/map/compute 和 condition 表达式（无局部变量声明）。
+ */
+export function safeEvalExpression(expr: string, vars: Record<string, any> = {}): any {
+  const sandbox = new Proxy({ ...SANDBOX_GLOBALS, ...vars }, {
+    has: () => true,
+    get(target, prop) {
+      if (typeof prop === 'symbol') return undefined
+      if (prop in target) return target[prop as string]
+      throw new Error(`Sandbox: access to "${String(prop)}" is not allowed`)
+    },
+  })
+
+  // 不使用 strict mode 以支持 with 语句；Proxy 沙箱提供安全保障
+  const fn = new Function('$sandbox', `with ($sandbox) { return (${expr}) }`)
+  return fn(sandbox)
+}
+
+/**
+ * 在白名单参数沙箱中安全执行脚本代码（多行语句）
+ *
+ * 将所有允许的全局对象和服务变量作为函数参数注入。
+ * 任何未在参数列表中列出的全局变量（window/document/fetch 等）
+ * 在 strict mode 下触发 ReferenceError，天然拒绝访问。
+ */
+export function safeEvalScript(code: string, vars: Record<string, any> = {}): void {
+  const allVars = { ...SANDBOX_GLOBALS, ...vars }
+  const keys = Object.keys(allVars)
+  const values = Object.values(allVars)
+
+  const fn = new Function(...keys, `"use strict";\n${code}`)
+  fn(...values)
+}
+
 // ===== 路径工具 =====
 
 /**

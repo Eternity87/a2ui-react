@@ -1,4 +1,13 @@
-export const apiCatalog = [
+export interface ApiDef {
+  url: string
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  description: string
+  params?: Record<string, { type: string; required?: boolean; description?: string }>
+  body?: Record<string, { type: string; required?: boolean; description?: string }>
+  responseExample?: Record<string, unknown>
+}
+
+export const apiCatalog: readonly ApiDef[] = [
   {
     url: '/api/products',
     method: 'GET' as const,
@@ -221,4 +230,4 @@ export const apiCatalog = [
       message: '登录成功',
     },
   },
-] as const
+]
