@@ -20,6 +20,8 @@
  * Agent JSON → detectFormat() → legacyToV09() / 透传 → MessageProcessor.processMessages()
  */
 
+import { logger } from '@/lib/logger'
+
 // ---- 类型定义 ----
 
 /** Agent 生成的简化格式消息 */
@@ -106,12 +108,11 @@ export function legacyToV09(
     }
 
     if (msg.surfaceUpdate) {
-      // 扁平化：将嵌套的 props 展开到组件顶层
-      let comps = msg.surfaceUpdate.components.map(c => ({
-        id: c.id,
-        component: c.component,
-        ...(c.props || {}),
-      }))
+      // 兼容两种格式：legacy (props 嵌套) 和 v0.9 (props 平级)
+      let comps = msg.surfaceUpdate.components.map(c => {
+        const { props, ...rest } = c
+        return { ...rest, ...(props || {}) }
+      })
       // A2uiSurface 要求必须有 id="root" 的根组件，自动补全
       comps = ensureRootComponent(comps)
       result.push({
@@ -137,9 +138,232 @@ export function legacyToV09(
   return result
 }
 
-/** v0.8 → v0.9 转换（当前为透传，后续可按需添加字段映射） */
+// ---- v0.8 → v0.9 转换 ----
+
+/**
+ * v0.8 → v0.9 消息转换
+ *
+ * v0.8 和 v0.9 的关键差异：
+ * 1. 消息信封：v0.8 用 beginRendering/surfaceUpdate/dataModelUpdate，v0.9 用 createSurface/updateComponents/updateDataModel
+ * 2. 组件结构：v0.8 的 component: { TypeName: { props } }，v0.9 的 component: "TypeName" + 平级 props
+ * 3. 属性值：v0.8 的 { literalString: "x" } / { path: "/x" }，v0.9 的原生 "x" 或 { path: "/x" }
+ * 4. 数据更新：v0.8 的 ValueMap[] 数组，v0.9 的普通对象 value
+ */
 function v08ToV09(messages: any[]): V09Message[] {
-  return messages
+  // 检测是否真的是 v0.8 格式（beginRendering/surfaceUpdate/dataModelUpdate），
+  // 如果已经是 v0.9 格式则直接返回
+  if (messages.length > 0 && messages[0]?.version === 'v0.9') return messages
+
+  const result: V09Message[] = []
+  for (const msg of messages) {
+    if ('beginRendering' in msg) {
+      result.push(convertBeginRendering(msg.beginRendering))
+    } else if ('surfaceUpdate' in msg) {
+      result.push(convertSurfaceUpdate(msg.surfaceUpdate))
+    } else if ('dataModelUpdate' in msg) {
+      result.push(...convertDataModelUpdate(msg.dataModelUpdate))
+    } else if ('deleteSurface' in msg) {
+      result.push(convertDeleteSurface(msg.deleteSurface))
+    }
+  }
+  return result
+}
+
+function convertBeginRendering(br: any): V09Message {
+  return {
+    version: 'v0.9' as const,
+    createSurface: {
+      surfaceId: br.surfaceId,
+      catalogId: br.catalogId ?? 'basic',
+      sendDataModel: true,
+    },
+  }
+}
+
+function convertSurfaceUpdate(su: any): V09Message {
+  return {
+    version: 'v0.9' as const,
+    updateComponents: {
+      surfaceId: su.surfaceId,
+      components: (su.components ?? []).map((c: any) => convertComponent(c)).filter(Boolean),
+    },
+  }
+}
+
+function convertDataModelUpdate(dm: any): V09Message[] {
+  const { surfaceId, path, contents } = dm
+  const value = convertValueMap(contents ?? [])
+  // 如果 path 为空，写根路径；否则按 path 写入
+  const targetPath = path || '/'
+  return [{ version: 'v0.9' as const, updateDataModel: { surfaceId, path: targetPath, value } }]
+}
+
+function convertDeleteSurface(ds: any): V09Message {
+  return {
+    version: 'v0.9' as const,
+    deleteSurface: { surfaceId: ds.surfaceId },
+  }
+}
+
+// ---- 组件转换 ----
+
+const COMPONENT_MAP: Record<string, string> = {
+  Text: 'Text', Row: 'Row', Column: 'Row', Card: 'Card',
+  Button: 'Button', TextField: 'TextField', Select: 'Select',
+  DataTable: 'DataTable', Modal: 'Dialog',
+}
+
+function convertComponent(comp: any): any | null {
+  if (!comp.component || typeof comp.component !== 'object') {
+    // 可能已经是 v0.9 格式
+    return comp
+  }
+  // v0.8 format: component: { TypeName: { ...props } }
+  const [typeName, v08Props] = Object.entries(comp.component)[0] as [string, any]
+  const v09Type = COMPONENT_MAP[typeName]
+  if (!v09Type) {
+    logger.warn(`[v08ToV09] Unknown component type: ${typeName}, skipping`)
+    return null
+  }
+
+  const converted = convertComponentProps(v09Type, v08Props ?? {})
+  return {
+    id: comp.id,
+    weight: comp.weight,
+    component: v09Type,
+    ...converted,
+  }
+}
+
+function convertComponentProps(type: string, props: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {}
+  for (const [key, value] of Object.entries(props)) {
+    if (value === undefined || value === null) continue
+
+    // 通用属性值转换
+    if (isStringValue(value)) {
+      result[key] = convertStringValue(value)
+    } else if (isNumberValue(value)) {
+      // v0.8 NumberValue
+      result[key] = convertNumberValue(value)
+    } else if (isBooleanValue(value)) {
+      // v0.8 BooleanValue
+      result[key] = convertBooleanValue(value)
+    } else if (isActionValue(value)) {
+      result[key] = convertActionValue(value)
+    } else if (typeof value === 'object' && !Array.isArray(value)) {
+      // 嵌套对象，递归转换
+      result[key] = convertComponentProps(type, value)
+    } else {
+      result[key] = value
+    }
+  }
+
+  // 组件特定字段映射
+  if (type === 'Text' && props.usageHint !== undefined) {
+    result.variant = convertStringValue(props.usageHint)
+  }
+  if (type === 'Button') {
+    // v0.8 child (单数字符串) → v0.9 children (数组)
+    if (props.child !== undefined) {
+      result.children = [convertStringValue(props.child)]
+    }
+    // v0.8 primary: true → v0.9 variant: "primary"
+    if (props.primary === true || convertBooleanValue(props.primary) === true) {
+      result.variant = 'primary'
+    }
+  }
+  if (type === 'Column') {
+    result.style = { ...(result.style || {}), flexDirection: 'column' }
+  }
+
+  return result
+}
+
+// ---- 值类型检测与转换 ----
+
+function isStringValue(v: any): boolean {
+  if (typeof v !== 'object' || v === null) return false
+  if ('literalString' in v) return true
+  if ('path' in v && !('literalNumber' in v) && !('literalBoolean' in v)) {
+    return Object.keys(v).every(k => k === 'path')
+  }
+  return false
+}
+
+function convertStringValue(v: any): any {
+  if (typeof v !== 'object' || v === null) return v
+  if (v.literalString !== undefined) return v.literalString
+  if (v.path !== undefined) return { path: v.path }
+  return v
+}
+
+function isNumberValue(v: any): boolean {
+  if (typeof v !== 'object' || v === null) return false
+  if ('literalNumber' in v) return true
+  if ('path' in v) {
+    return Object.keys(v).every(k => k === 'path' || k === 'literalNumber')
+  }
+  return false
+}
+
+function convertNumberValue(v: any): any {
+  if (typeof v !== 'object' || v === null) return v
+  if (v.literalNumber !== undefined) return v.literalNumber
+  if (v.path !== undefined) return { path: v.path }
+  return v
+}
+
+function isBooleanValue(v: any): boolean {
+  if (typeof v !== 'object' || v === null) return false
+  if ('literalBoolean' in v) return true
+  if ('path' in v && !('literalString' in v) && !('literalNumber' in v)) {
+    return Object.keys(v).every(k => k === 'path')
+  }
+  return false
+}
+
+function convertBooleanValue(v: any): any {
+  if (typeof v !== 'object' || v === null) return v
+  if (v.literalBoolean !== undefined) return v.literalBoolean
+  if (v.path !== undefined) return { path: v.path }
+  return v
+}
+
+function isActionValue(v: any): boolean {
+  return typeof v === 'object' && v !== null &&
+    'name' in v && !('event' in v) && !('surfaceId' in v)
+}
+
+function convertActionValue(v: any): any {
+  // v0.8: { name: "submit", context: [{ key: "id", value: { path: "/x" } }] }
+  // v0.9: { event: { name: "submit", context: { id: { path: "/x" } } } }
+  const context: Record<string, any> = {}
+  if (Array.isArray(v.context)) {
+    for (const item of v.context) {
+      if (item.key && item.value !== undefined) {
+        context[item.key] = convertStringValue(item.value)
+      }
+    }
+  }
+  return { event: { name: v.name, context } }
+}
+
+// ---- ValueMap 转换 ----
+
+function convertValueMap(contents: any[]): any {
+  if (!Array.isArray(contents)) return contents
+  // 如果内容是 [{ key, valueString/number/boolean/map }] 格式
+  if (contents.length > 0 && contents[0]?.key !== undefined) {
+    const result: Record<string, any> = {}
+    for (const item of contents) {
+      result[item.key] =
+        item.valueString ?? item.valueNumber ?? item.valueBoolean ??
+        (item.valueMap ? convertValueMap(item.valueMap) : undefined)
+    }
+    return result
+  }
+  return contents
 }
 
 // ---- 根组件自动补全 ----
@@ -180,9 +404,10 @@ export function ensureRootComponent(comps: any[]): any[] {
   const inTree = new Set<string>()
   const collectTree = (id: string) => {
     if (inTree.has(id)) return
-    inTree.add(id)
     const comp = comps.find(c => c.id === id)
-    if (comp && Array.isArray(comp.children)) {
+    if (!comp) return // 组件不存在则不加入 visited，避免悬空引用污染集合
+    inTree.add(id)
+    if (Array.isArray(comp.children)) {
       for (const cid of comp.children) collectTree(cid)
     }
   }
@@ -191,7 +416,8 @@ export function ensureRootComponent(comps: any[]): any[] {
   // 将孤儿根节点（不被任何组件引用、也不在 root 树中）挂到 root 下
   const orphans = comps.filter(c => !childIds.has(c.id) && !inTree.has(c.id))
   if (orphans.length > 0) {
-    const root = comps.find(c => c.id === 'root')!
+    const root = comps.find(c => c.id === 'root')
+    if (!root) return comps
     const existing: string[] = Array.isArray(root.children) ? root.children : []
     const mergedChildren = [...existing, ...orphans.map(c => c.id)]
     return comps.map(c => c.id === 'root' ? { ...c, children: mergedChildren } : c)
@@ -245,6 +471,54 @@ export function dataModelToV09Messages(surfaceId: string, data: Record<string, a
     msgs.push({ version: 'v0.9' as const, updateDataModel: { surfaceId, path: `/${key}`, value } })
   }
   return msgs
+}
+
+// ---- 多页面支持 ----
+
+/**
+ * 将 A2UI 消息数组中的所有 surfaceId 替换为目标 ID
+ * Agent 生成的每页消息都使用 surfaceId: "main"，加载时需为每页分配唯一 surfaceId
+ */
+export function rewriteSurfaceId(messages: any[], newId: string): any[] {
+  return messages.map((msg: any) => {
+    const updated: any = {}
+    for (const [key, val] of Object.entries(msg)) {
+      if (val && typeof val === 'object' && 'surfaceId' in val) {
+        updated[key] = { ...val, surfaceId: newId }
+      } else {
+        updated[key] = val
+      }
+    }
+    return updated
+  })
+}
+
+/** 多页面 JSON 中单页的定义 */
+export interface PageDef {
+  a2ui: any[]
+  logic: { reactions: any[]; scripts?: Record<string, string> }
+  /** 内嵌子 surface 定义（供 Dialog 组件引用） */
+  children?: Record<string, PageDef>
+}
+
+/** 归一化后的多页面结构 */
+export interface NormalizedPages {
+  pages: Record<string, PageDef>
+  shared?: { dataModel?: Record<string, any>; logic?: { reactions: any[] } }
+}
+
+/**
+ * 将任意输入格式归一化为 { pages, shared } 结构
+ * - 有 pages key → 多页面格式
+ * - 无 pages key → 视为单页面，自动包装为 { main: {...} }
+ */
+export function normalizeToPages(input: any): NormalizedPages {
+  if (input && typeof input === 'object' && 'pages' in input) {
+    return { pages: input.pages, shared: input.shared }
+  }
+  return {
+    pages: { main: { a2ui: input.a2ui ?? [], logic: input.logic ?? { reactions: [] } } },
+  }
 }
 
 // ---- 反向提取（用于调试器/导出） ----

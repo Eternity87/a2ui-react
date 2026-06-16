@@ -19,8 +19,12 @@ import { PipeEngine } from '@/runtime/pipe-engine'
 import { createMockApiExecutor } from '@/mock/api'
 import { A2UIProvider, useA2UI } from '@/runtime/a2ui-context'
 import { createA2UICatalog } from '@/runtime/a2ui-catalog'
+import { normalizeToPages } from '@/runtime/a2ui-adapter'
+import { PageProvider, usePageContext } from '@/runtime/page-context'
+import { useSharedStore } from '@/runtime/shared-store'
 import { A2uiSurface } from '@a2ui/react/v0_9'
 import { Debugger } from '@/views/Debugger'
+import { PageSelector } from '@/views/PageSelector'
 import { generatePage, generatePageWithExample, type AgentConfig } from '@/agent/agent-client'
 import demoData from '@/demo.json'
 import { Toast } from '@/components/Toast'
@@ -65,72 +69,51 @@ export default function App() {
   )
 }
 
-/** 预览模式内部组件（在 A2UIProvider 内） */
+/**
+ * 预览模式内部组件（在 A2UIProvider 内）
+ *
+ * 多页面数据流:
+ *   JSON → normalizeToPages() → PageProvider
+ *     → shared data → useSharedStore().hydrate()
+ *     → 首页 a2ui → a2ui.load(page.a2ui, { pageId })
+ *     → PageProvider 管理 currentPageId
+ *     → 渲染区根据 currentPageId 显示对应 A2uiSurface
+ */
 function PreviewInner() {
   const a2ui = useA2UI()
   const engineRef = useRef<ReactionEngine | null>(null)
   const pipeEngineRef = useRef(new PipeEngine({}))
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null)
-  const [reactions, setReactions] = useState<any[]>([])
+
+  // 注册 toast 处理器到 A2UI context，供 Dialog 等子组件使用
+  useEffect(() => {
+    a2ui.setToastHandler((msg, type = 'info') => setToast({ msg, type }))
+    return () => a2ui.setToastHandler(console.error)
+  }, [a2ui.setToastHandler])
+
+  // 归一化后的多页面数据（null 表示未加载）
+  const [appData, setAppData] = useState<ReturnType<typeof normalizeToPages> | null>(null)
 
   // Agent state
   const [provider, setProvider] = useState<AgentConfig['provider']>('mock')
   const [apiKey, setApiKey] = useState('')
   const [requirement, setRequirement] = useState('')
   const [useFullPrompt, setUseFullPrompt] = useState(false)
+  const [exampleType, setExampleType] = useState<'form' | 'dashboard'>('dashboard')
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState('')
   const [showConfig, setShowConfig] = useState(true)
 
   function initFromData(data: any) {
-    const dm = data.a2ui?.find((m: any) => 'dataModelUpdate' in m)
-    const reacts = data.logic?.reactions ?? []
-
-    // Load A2UI messages (creates surface synchronously)
-    a2ui.load(data.a2ui)
-
-    setReactions(reacts)
+    const normalized = normalizeToPages(data)
+    setAppData(normalized)
   }
 
   // 初始加载：默认展示 demo.json
   useEffect(() => {
     initFromData(demoData)
   }, [])
-
-  // 保持最新 surface 引用，供 onAction 回调使用（避免闭包过期）
-  const surfaceRef = useRef(a2ui.surface)
-  surfaceRef.current = a2ui.surface
-
-  // surface 就绪后创建 Reaction 引擎（init 事件在此触发）
-  useEffect(() => {
-    const surface = a2ui.surface
-    if (!surface || reactions.length === 0) return
-
-    engineRef.current?.destroy()
-    pipeEngineRef.current.updateDataModel(surface.dataModel.get('/') ?? {})
-
-    const engine = new ReactionEngine(surface.dataModel, reactions, {
-      apiExecutor: createMockApiExecutor(),
-      pipeEngine: pipeEngineRef.current,
-      toast: (msg, type = 'info') => setToast({ msg, type }),
-    })
-    engine.boot()
-    engineRef.current = engine
-
-    return () => engine.destroy()
-  }, [a2ui.surface, reactions])
-
-  // Wire click actions → ReactionEngine
-  useEffect(() => {
-    const surface = surfaceRef.current
-    if (!surface) return
-    return a2ui.onAction((action: any) => {
-      if (action.name === 'a2ui.click' && action.context?.reactionId) {
-        engineRef.current?.triggerReaction(action.context.reactionId)
-      }
-    })
-  }, [a2ui.surface])
 
   // Agent 生成
   async function doGenerate() {
@@ -152,8 +135,8 @@ function PreviewInner() {
         apiKey: provider !== 'mock' ? apiKey || undefined : undefined,
       }
       const result = useFullPrompt
-        ? await generatePageWithExample(requirement, config)
-        : await generatePage(requirement, config)
+        ? await generatePageWithExample(requirement, config, exampleType)
+        : await generatePage(requirement, config, exampleType)
       initFromData(result)
       setToast({ msg: '页面生成成功！', type: 'success' })
     } catch (err: any) {
@@ -195,7 +178,7 @@ function PreviewInner() {
           <div className="p-3 space-y-3 overflow-y-auto flex-1">
             <div>
               <label className="text-xs text-gray-500">提供商</label>
-              <Select value={provider} onValueChange={v => { setProvider(v as any); setApiKey(defaultKeys[v] ?? '') }}>
+              <Select value={provider} onValueChange={v => { setProvider(v as AgentConfig['provider']); setApiKey(defaultKeys[v] ?? '') }}>
                 <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mock">Mock (无需 Key)</SelectItem>
@@ -213,9 +196,18 @@ function PreviewInner() {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs text-gray-500">示例类型</label>
+              <select
+                className="h-7 text-xs border rounded px-1"
+                value={exampleType}
+                onChange={e => setExampleType(e.target.value as 'form' | 'dashboard')}
+              >
+                <option value="dashboard">BI 看板</option>
+                <option value="form">订单表单</option>
+              </select>
               <Checkbox checked={useFullPrompt} onCheckedChange={v => setUseFullPrompt(!!v)} id="fullPrompt" />
-              <label htmlFor="fullPrompt" className="text-xs text-gray-500 cursor-pointer">使用完整示例 Prompt</label>
+              <label htmlFor="fullPrompt" className="text-xs text-gray-500 cursor-pointer">完整示例</label>
             </div>
 
             <div>
@@ -252,22 +244,24 @@ function PreviewInner() {
                   <span className="font-medium">订单列表</span>
                   <p className="text-gray-400 text-[11px] mt-0.5">搜索 + DataTable + init 自动加载</p>
                 </div>
+                <div className="p-1.5 bg-gray-50 rounded cursor-pointer hover:bg-blue-50"
+                  onClick={() => setRequirement('生成一个销售数据BI看板：\n\nKPI指标卡：总销售额（¥万，同比趋势）、总订单量（单，同比趋势）、客单价（¥万，环比趋势）、利润率（%，同比趋势），每个KPI带迷你趋势线。\n\n图表：柱状图（2026上半年月度销售额，参考线500）、折线图（营收趋势，参考线100万）、饼图（各品类市场占比）、面积图（月度订单量）、组合图（销售额+利润率双Y轴）、散点图（广告投入vs销售额）、雷达图（产品综合评分：性能/稳定性/易用性/安全性/扩展性/兼容性）、径向柱状图（季度目标完成率）。\n\n交互：顶部显示下钻信息文本。柱状图点击过滤散点图（toggle模式），饼图点击显示品类名称和占比，组合图点击显示该月销售额和利润率，径向图点击显示季度完成率。')}>
+                  <span className="font-medium">BI 看板</span>
+                  <p className="text-gray-400 text-[11px] mt-0.5">Dashboard + 8图表 + KPI + 点击联动</p>
+                </div>
               </div>
             </details>
           </div>
         )}
       </aside>
 
-      {/* 渲染区 */}
+      {/* 渲染区 — 多页面支持 */}
       <main className="flex-1 overflow-auto p-6 bg-gray-50">
-        {a2ui.surface ? (
-          <div className="max-w-3xl mx-auto">
-            <div className="bg-white rounded-lg p-6 shadow-sm">
-              <ErrorBoundary>
-                <A2uiSurface surface={a2ui.surface} />
-              </ErrorBoundary>
-            </div>
-          </div>
+        {appData ? (
+          <PageProvider data={appData}>
+            <PageRenderer toast={toast} setToast={setToast} pipeEngine={pipeEngineRef.current}
+              engineRef={engineRef} a2ui={a2ui} />
+          </PageProvider>
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="text-center text-gray-400">
@@ -277,6 +271,86 @@ function PreviewInner() {
           </div>
         )}
       </main>
+    </div>
+  )
+}
+
+/** 页面渲染区域（在 PageProvider 内部，可访问 usePageContext） */
+function PageRenderer({
+  toast, setToast, pipeEngine, engineRef, a2ui,
+}: {
+  toast: { msg: string; type: string } | null
+  setToast: (t: { msg: string; type: string } | null) => void
+  pipeEngine: PipeEngine
+  engineRef: React.MutableRefObject<ReactionEngine | null>
+  a2ui: ReturnType<typeof useA2UI>
+}) {
+  const { pages, currentPageId, navigateTo, pageIds } = usePageContext()
+  const sharedStore = useSharedStore()
+  const surfaceRef = useRef(a2ui.getSurface(''))
+
+  // 跟踪当前 surface
+  useEffect(() => {
+    surfaceRef.current = currentPageId ? a2ui.getSurface(currentPageId) : null
+  }, [currentPageId])
+
+  // 页面切换时创建/重建 ReactionEngine
+  useEffect(() => {
+    if (!currentPageId || !pages[currentPageId]) return
+    const page = pages[currentPageId]
+    const surface = a2ui.getSurface(currentPageId)
+    if (!surface) return
+
+    engineRef.current?.destroy()
+    pipeEngine.updateDataModel(surface.dataModel.get('/') ?? {})
+
+    const engine = new ReactionEngine(surface.dataModel, page.logic.reactions ?? [], {
+      apiExecutor: createMockApiExecutor(),
+      pipeEngine,
+      toast: (msg, type = 'info') => setToast({ msg, type }),
+      sharedStore: useSharedStore,
+      navigate: (targetPage, params) => {
+        navigateTo(targetPage, params)
+      },
+    })
+    engine.boot()
+    engineRef.current = engine
+
+    return () => engine.destroy()
+  }, [currentPageId, pages, pipeEngine, setToast, navigateTo, sharedStore])
+
+  // Wire click actions → ReactionEngine
+  useEffect(() => {
+    return a2ui.onAction((action: any) => {
+      if (action.name === 'a2ui.click' && action.context?.reactionId) {
+        if (!currentPageId) return
+        const surface = a2ui.getSurface(currentPageId)
+        if (action.context.clickData && surface) {
+          // 统一取 payload（recharts 所有图形元素的原始数据都在 payload 中）
+          surface.dataModel.set('/_event', action.context.clickData?.payload ?? action.context.clickData)
+        }
+        engineRef.current?.triggerReaction(action.context.reactionId)
+      }
+    })
+  }, [currentPageId, a2ui.surface])
+
+  const currentSurface = currentPageId ? a2ui.getSurface(currentPageId) : null
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-3">
+      <PageSelector pageIds={pageIds} currentPageId={currentPageId}
+        onSelect={(pid) => navigateTo(pid)} />
+      {currentSurface ? (
+        <div className="bg-white rounded-lg p-6 shadow-sm">
+          <ErrorBoundary>
+            <A2uiSurface key={currentPageId} surface={currentSurface} />
+          </ErrorBoundary>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center h-40 bg-white rounded-lg shadow-sm text-gray-400 text-sm">
+          加载中...
+        </div>
+      )}
     </div>
   )
 }

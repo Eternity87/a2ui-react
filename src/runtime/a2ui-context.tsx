@@ -22,17 +22,25 @@
 import React, { createContext, useContext, useRef, useState, useCallback, useMemo } from 'react'
 import { MessageProcessor, type SurfaceModel } from '@a2ui/web_core/v0_9'
 import type { Catalog } from '@a2ui/web_core/v0_9'
-import { toV09, extractComponents, extractDataModel } from './a2ui-adapter'
+import { toV09, extractComponents, extractDataModel, rewriteSurfaceId } from './a2ui-adapter'
 import type { ReactComponentImplementation } from '@a2ui/react/v0_9'
 
 // ===== Context 类型定义 =====
 
 interface A2UIContextValue {
   processor: MessageProcessor<ReactComponentImplementation>
-  /** 当前活动的 surface（A2uiSurface 渲染的目标） */
+  /** 所有已加载的 surface（按 surfaceId 索引） */
+  surfaces: Record<string, SurfaceModel<ReactComponentImplementation>>
+  /** 获取指定 surface */
+  getSurface: (id: string) => SurfaceModel<ReactComponentImplementation> | null
+  /** 当前活动的 surfaceId */
+  currentSurfaceId: string
+  /** 切换当前 surface */
+  setCurrentSurfaceId: (id: string) => void
+  /** 当前活动的 surface（向后兼容） */
   surface: SurfaceModel<ReactComponentImplementation> | null
-  /** 加载任何格式的 A2UI JSON */
-  load: (messages: any[]) => void
+  /** 加载 A2UI JSON（可指定 pageId 以分配唯一 surfaceId） */
+  load: (messages: any[], options?: { pageId?: string }) => void
   /** 获取简化格式的组件列表（调试用） */
   getComponents: () => any[]
   /** 获取当前 dataModel 的快照 */
@@ -41,10 +49,16 @@ interface A2UIContextValue {
   subscribeDataModel: (callback: () => void) => () => void
   /** 设置 dataModel 值 */
   setDataValue: (path: string, value: any) => void
+  /** 销毁指定 surface（用于 Dialog 关闭时清理子 surface） */
+  destroySurface: (id: string) => void
   /** 订阅 surface 上的 action 事件（按钮点击等） */
   onAction: (handler: (action: any) => void) => () => void
   /** 版本号（dataModel 变更时递增，用于触发重渲染） */
   version: number
+  /** 弹出 toast 提示（默认 console.error，子组件可通过 setToastHandler 注册自定义实现） */
+  toast: (msg: string, type?: string) => void
+  /** 注册自定义 toast 实现（Debugger/PreviewInner 在 mount 时调用） */
+  setToastHandler: (handler: (msg: string, type?: string) => void) => void
 }
 
 const A2UIContext = createContext<A2UIContextValue | null>(null)
@@ -79,9 +93,19 @@ interface A2UIProviderProps {
  */
 export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
   const [version, setVersion] = useState(0)
-  // 使用 ref 存储 surface，确保在 MessageProcessor 回调中同步可用
-  const surfaceRef = useRef<SurfaceModel<ReactComponentImplementation> | null>(null)
-  const dmSubRef = useRef<{ unsubscribe: () => void } | null>(null)
+  const [currentSurfaceId, setCurrentSurfaceId] = useState('main')
+  const surfacesRef = useRef<Map<string, SurfaceModel<ReactComponentImplementation>>>(new Map())
+  const [surfaces, setSurfaces] = useState<Record<string, SurfaceModel<ReactComponentImplementation>>>({})
+  const dmSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map())
+  const toastHandlerRef = useRef<(msg: string, type?: string) => void>(console.error)
+
+  const toast = useCallback((msg: string, type?: string) => {
+    toastHandlerRef.current(msg, type)
+  }, [])
+
+  const setToastHandler = useCallback((handler: (msg: string, type?: string) => void) => {
+    toastHandlerRef.current = handler
+  }, [])
 
   /**
    * MessageProcessor 创建一次（依赖 catalog 不变）
@@ -90,19 +114,27 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
   const processor = useMemo(() => {
     const p = new MessageProcessor<ReactComponentImplementation>([catalog])
 
-    // surface 创建 → 建立 dataModel 订阅链
+    // surface 创建 → 加入 surfaces map + 建立 dataModel 订阅
     p.model.onSurfaceCreated.subscribe((s: SurfaceModel<ReactComponentImplementation>) => {
-      surfaceRef.current = s
-      dmSubRef.current?.unsubscribe()
-      // 订阅根路径变化 → 触发 version 递增 → React 重渲染
-      dmSubRef.current = s.dataModel.subscribe('/', () => setVersion(v => v + 1))
+      surfacesRef.current.set(s.id, s)
+      setSurfaces(prev => ({ ...prev, [s.id]: s }))
+      // 清理旧订阅
+      dmSubsRef.current.get(s.id)?.unsubscribe()
+      // 订阅该 surface 根路径变化 → 触发 version 递增 → React 重渲染
+      dmSubsRef.current.set(s.id, s.dataModel.subscribe('/', () => setVersion(v => v + 1)))
       setVersion(v => v + 1)
     })
 
-    // surface 销毁 → 清理订阅
-    p.model.onSurfaceDeleted.subscribe(() => {
-      dmSubRef.current?.unsubscribe()
-      surfaceRef.current = null
+    // surface 销毁 → 从 map 移除 + 清理订阅
+    p.model.onSurfaceDeleted.subscribe((sid: string) => {
+      dmSubsRef.current.get(sid)?.unsubscribe()
+      dmSubsRef.current.delete(sid)
+      surfacesRef.current.delete(sid)
+      setSurfaces(prev => {
+        const next = { ...prev }
+        delete next[sid]
+        return next
+      })
       setVersion(v => v + 1)
     })
 
@@ -112,18 +144,22 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
   /**
    * 加载 A2UI 消息（自动检测格式：简化 / v0.9 / v0.8）
    *
+   * options.pageId: 多页面场景下的页面 ID。如果指定，会将消息中的 surfaceId 从
+   * "main" 替换为 pageId，确保每个页面拥有独立的 Surface。
+   *
    * 关键：加载前先删除同名 surface，避免 "Surface X already exists" 错误
-   * （React Strict Mode 会双次执行 effect，也会触发此问题）
    */
-  const load = useCallback((messages: any[]) => {
-    const v09 = toV09(messages, { catalogId: catalog.id })
+  const load = useCallback((messages: any[], options?: { pageId?: string }) => {
+    const pageId = options?.pageId ?? 'main'
+    const converted = rewriteSurfaceId(messages, pageId)
+    const v09 = toV09(converted, { catalogId: catalog.id })
 
     // 删除同名 surface（处理 Strict Mode 和页面重新生成）
     for (const msg of v09) {
       if ('createSurface' in msg && msg.createSurface) {
         const sid = msg.createSurface.surfaceId
         if (processor.model.getSurface(sid)) {
-          processor.processMessages([{ deleteSurface: { surfaceId: sid } } as any])
+          processor.processMessages([{ version: 'v0.9', deleteSurface: { surfaceId: sid } } as any])
         }
       }
     }
@@ -132,46 +168,70 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
     setVersion(v => v + 1)
   }, [processor, catalog.id])
 
-  // 辅助方法
-  const getComponents = useCallback(() => {
-    const s = surfaceRef.current
-    return s ? extractComponents(s) : []
+  // 辅助方法 — 均操作当前 surface
+  const getSurface = useCallback((id: string) => {
+    return surfacesRef.current.get(id) ?? null
   }, [])
+
+  const getComponents = useCallback(() => {
+    const s = surfacesRef.current.get(currentSurfaceId)
+    return s ? extractComponents(s) : []
+  }, [currentSurfaceId])
 
   const getDataModel = useCallback(() => {
-    const s = surfaceRef.current
+    const s = surfacesRef.current.get(currentSurfaceId)
     return s ? extractDataModel(s) : {}
-  }, [])
+  }, [currentSurfaceId])
 
   const subscribeDataModel = useCallback((callback: () => void) => {
-    const s = surfaceRef.current
+    const s = surfacesRef.current.get(currentSurfaceId)
     if (!s) return () => {}
     const sub = s.dataModel.subscribe('/', callback)
     return () => sub.unsubscribe()
-  }, [])
+  }, [currentSurfaceId])
 
   const setDataValue = useCallback((path: string, value: any) => {
-    surfaceRef.current?.dataModel.set(path, value)
-  }, [])
+    surfacesRef.current.get(currentSurfaceId)?.dataModel.set(path, value)
+  }, [currentSurfaceId])
+
+  const destroySurface = useCallback((id: string) => {
+    const s = processor.model.getSurface(id)
+    if (s) {
+      processor.processMessages([{ version: 'v0.9', deleteSurface: { surfaceId: id } } as any])
+      setVersion(v => v + 1)
+    }
+  }, [processor])
 
   const onAction = useCallback((handler: (action: any) => void) => {
-    const s = surfaceRef.current
+    const s = surfacesRef.current.get(currentSurfaceId)
     if (!s) return () => {}
     const sub = s.onAction.subscribe(handler)
     return () => sub.unsubscribe()
-  }, [])
+  }, [currentSurfaceId])
 
-  const value: A2UIContextValue = {
+  const value = useMemo<A2UIContextValue>(() => ({
     processor,
-    surface: surfaceRef.current,  // ref 同步更新，避免闭包过期
+    surfaces,
+    getSurface,
+    currentSurfaceId,
+    setCurrentSurfaceId,
+    surface: surfacesRef.current.get(currentSurfaceId) ?? null,
     load,
     getComponents,
     getDataModel,
     subscribeDataModel,
     setDataValue,
+    destroySurface,
     onAction,
     version,
-  }
+    toast,
+    setToastHandler,
+  }), [
+    processor, surfaces, getSurface, currentSurfaceId, setCurrentSurfaceId,
+    load, getComponents, getDataModel, subscribeDataModel,
+    setDataValue, destroySurface, onAction, version,
+    toast, setToastHandler,
+  ])
 
   return React.createElement(A2UIContext.Provider, { value }, children)
 }

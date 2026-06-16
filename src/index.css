@@ -36,3 +36,16 @@
     font-family: system-ui, -apple-system, sans-serif;
   }
 }
+
+/* 修复 recharts 点击后的 focus 黑框 */
+.recharts-surface:focus,
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible {
+  outline: none;
+}
+
+/* 修复 recharts ResponsiveContainer 初始测量到 -1 的警告 */
+.recharts-responsive-container {
+  min-width: 1px !important;
+  min-height: 1px !important;
+}

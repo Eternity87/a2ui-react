@@ -29,7 +29,8 @@
  * 表达式只会操作 dataModel 数据，但如果将来支持自由输入需注意沙箱化。
  */
 
-import { dmPath, validateExpression } from './a2ui-utils'
+import { dmPath, safeEvalExpression } from './a2ui-utils'
+import { logger } from '@/lib/logger'
 
 export class PipeEngine {
   /**
@@ -72,34 +73,44 @@ export class PipeEngine {
         return this.resolvePath(p)
       case 'filter':
         return Array.isArray(current)
-          ? current.filter(item => this.eval(p, { $: item }))
+          ? current.filter(item => this.eval(p, { $: item, ...this.flatData() }))
           : []
       case 'map':
         return Array.isArray(current)
-          ? current.map((item, i) => this.eval(p, { $: item, $_index: i }))
+          ? current.map((item, i) => this.eval(p, { $: item, $_index: i, ...this.flatData() }))
           : []
       case 'compute':
         // compute 步骤可访问 $value（当前值）和 dataModel 中的所有字段
         return this.eval(p, { $value: current, ...this.flatData() })
+      case 'yoy':
+      case 'mom': {
+        const curr = this.resolveValue(p?.current, current)
+        const prev = this.resolveValue(p?.previous, current)
+        if (prev === undefined || prev === null) return 0
+        if (prev === 0) return curr > 0 ? Infinity : (curr < 0 ? -Infinity : 0)
+        return ((curr - prev) / Math.abs(prev)) * 100
+      }
       default:
-        console.warn(`[PipeEngine] Unknown step: ${step.type}`)
+        logger.warn(`[PipeEngine] Unknown step: ${step.type}`)
         return current
     }
   }
 
+  /** 解析值：/ 开头视为 dataModel 路径，否则原样返回，undefined 时取 current */
+  private resolveValue(val: any, current: any): any {
+    if (typeof val === 'string' && val.startsWith('/')) return this.resolvePath(val)
+    return val !== undefined && val !== null ? val : current
+  }
+
   /**
-   * 安全求解 JavaScript 表达式
-   * 变量通过函数参数注入，避免 eval 直接访问外部作用域
+   * 在白名单沙箱中安全求解表达式
+   * 变量通过 Proxy 沙箱注入，阻止访问 window/document/fetch 等危险全局对象
    */
   private eval(expr: string, vars: Record<string, any>): any {
     try {
-      validateExpression(expr, 'PipeEngine.eval')
-      const keys = Object.keys(vars)
-      const values = Object.values(vars)
-      const fn = new Function(...keys, `"use strict"; return (${expr})`)
-      return fn(...values)
+      return safeEvalExpression(expr, vars)
     } catch (err) {
-      console.error(`[PipeEngine] Eval failed: "${expr}"`, err)
+      logger.error(`[PipeEngine] Eval failed: "${expr}"`, err)
       return undefined
     }
   }
@@ -126,17 +137,19 @@ export class PipeEngine {
    *     → { productDetail: { price: 100 } }
    *     → compute 表达式中可直接用 productDetail.price
    */
-  private flatData(): Record<string, any> {
+  private flatData(maxDepth = 3): Record<string, any> {
     const result: Record<string, any> = {}
-    const walk = (obj: any, prefix: string) => {
-      if (!obj || typeof obj !== 'object') return
+    const visited = new WeakSet<object>()
+    const walk = (obj: any, prefix: string, depth: number) => {
+      if (depth > maxDepth || !obj || typeof obj !== 'object' || visited.has(obj)) return
+      visited.add(obj)
       for (const [k, v] of Object.entries(obj)) {
         const key = prefix ? `${prefix}.${k}` : k
         if (/^[a-zA-Z_$][\w$]*$/.test(key)) result[key] = v
-        if (typeof v === 'object' && v !== null && !Array.isArray(v)) walk(v, key)
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) walk(v, key, depth + 1)
       }
     }
-    walk(this.dataModel, '')
+    walk(this.dataModel, '', 0)
     return result
   }
 }

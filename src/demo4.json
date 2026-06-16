@@ -1,0 +1,167 @@
+{
+  "pages": {
+    "page_orderCreate": {
+      "a2ui": [
+        { "beginRendering": { "surfaceId": "main", "catalogId": "basic" } },
+        { "surfaceUpdate": { "surfaceId": "main", "components": [
+          {
+            "id": "root",
+            "component": "Row",
+            "props": { "children": ["card1", "card2", "backBtn", "confirmDialog", "productPickerDialog"], "gap": 16 }
+          },
+          {
+            "id": "card1",
+            "component": "Card",
+            "props": { "title": "产品信息", "children": ["catLabel", "catSelect", "prodSelect", "priceText"] }
+          },
+          { "id": "catLabel", "component": "Text", "props": { "text": "产品大类" } },
+          {
+            "id": "catSelect",
+            "component": "Select",
+            "props": { "label": "产品大类", "value": { "path": "/productCategory" }, "options": { "path": "/categoryOptions" }, "placeholder": "请选择产品大类" }
+          },
+          {
+            "id": "prodSelect",
+            "component": "Select",
+            "props": { "label": "产品", "value": { "path": "/productId" }, "options": { "path": "/productOptions" }, "placeholder": "请先选择大类" }
+          },
+          { "id": "priceText", "component": "Text", "props": { "text": "单价: ${/unitPrice} 元/${/unit}" } },
+          {
+            "id": "card2",
+            "component": "Card",
+            "props": { "title": "订单信息", "children": ["qtyInput", "totalText", "submitBtn", "pickProductBtn"] }
+          },
+          { "id": "qtyInput", "component": "TextField", "props": { "label": "数量", "value": { "path": "/quantity" }, "type": "number", "placeholder": "请输入数量" } },
+          { "id": "totalText", "component": "Text", "props": { "text": "总价: ${/totalPrice} 元" } },
+          { "id": "submitBtn", "component": "Button", "props": { "label": "提交订单（弹窗确认）", "variant": "primary", "reactionId": "openConfirm" } },
+          { "id": "pickProductBtn", "component": "Button", "props": { "label": "从产品库选择（远程弹窗）", "variant": "secondary", "reactionId": "openPicker" } },
+          { "id": "backBtn", "component": "Button", "props": { "label": "返回", "variant": "secondary", "reactionId": "goBack" } },
+          {
+            "id": "confirmDialog",
+            "component": "Dialog",
+            "props": { "open": { "path": "/confirmOpen" }, "title": "确认提交", "source": "confirmDialog" }
+          },
+          {
+            "id": "productPickerDialog",
+            "component": "Dialog",
+            "props": { "open": { "path": "/pickerOpen" }, "title": "选择产品（远程子页面）", "source": "/api/pages/productPicker", "width": "max-w-4xl" }
+          }
+        ] } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/categoryOptions", "value": [
+          { "label": "电子产品", "value": "ELECTRONICS" },
+          { "label": "家具", "value": "FURNITURE" }
+        ] } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productCategory", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productId", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/productOptions", "value": [] } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/unitPrice", "value": 0 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/unit", "value": "" } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/quantity", "value": 1 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/totalPrice", "value": 0 } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/confirmOpen", "value": false } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/pickerOpen", "value": false } },
+        { "updateDataModel": { "surfaceId": "main", "path": "/selectedProductId", "value": "" } }
+      ],
+      "logic": {
+        "reactions": [
+          {
+            "id": "loadProducts",
+            "when": { "field": "/productCategory", "event": "change" },
+            "then": [
+              { "type": "cascade", "target": "/productId" },
+              { "type": "setValues", "map": { "/productOptions": [] } },
+              { "type": "apiRequest", "url": "/api/products", "params": { "category": "/productCategory" }, "outputTo": "/rawProducts" },
+              { "type": "setValues", "map": { "/productOptions": { "pipe": [
+                { "get": "/rawProducts.list" },
+                { "map": "({ label: $.name + ($.status === 'discontinued' ? ' (停产)' : ''), value: $.id })" }
+              ] } } }
+            ]
+          },
+          {
+            "id": "loadDetail",
+            "when": { "field": "/productId", "event": "change" },
+            "then": [
+              { "type": "apiRequest", "url": "/api/product-detail", "params": { "id": "/productId" }, "outputTo": "/productDetail" },
+              { "type": "setValues", "map": { "/unitPrice": "/productDetail.price", "/unit": "/productDetail.unit" } },
+              { "type": "condition", "branches": [
+                { "if": "$productDetail.status === 'discontinued'", "then": [{ "type": "toast", "message": "该产品已停产，请重新选择", "variant": "warning" }] },
+                { "then": [{ "type": "toast", "message": "产品信息已加载", "variant": "success" }] }
+              ] }
+            ]
+          },
+          {
+            "id": "calcTotal",
+            "when": { "field": "/quantity", "event": "change" },
+            "then": [{ "type": "setValues", "map": { "/totalPrice": { "pipe": [
+              { "get": "/unitPrice" }, { "compute": "$value * quantity" }
+            ] } } }]
+          },
+          {
+            "id": "openConfirm",
+            "when": { "field": "submitBtn", "event": "click" },
+            "then": [
+              { "type": "validate", "rules": [
+                { "field": "/productCategory", "required": true, "message": "请选择产品大类" },
+                { "field": "/productId", "required": true, "message": "请选择产品" },
+                { "field": "/quantity", "required": true, "message": "请输入数量" }
+              ] },
+              { "type": "setValues", "map": { "/confirmOpen": true } }
+            ]
+          },
+          {
+            "id": "onConfirmResult",
+            "when": { "field": "/confirmOpen", "event": "change" },
+            "then": [
+              { "type": "condition", "branches": [
+                { "if": "shared.dialogResult === 'confirmed' && !$confirmOpen", "then": [
+                  { "type": "apiRequest", "url": "/api/orders", "method": "POST", "body": { "productId": "/productId", "quantity": "/quantity", "unitPrice": "/unitPrice" }, "outputTo": "/orderResult" },
+                  { "type": "toast", "message": "订单提交成功！", "variant": "success" }
+                ] }
+              ] }
+            ]
+          },
+          {
+            "id": "openPicker",
+            "when": { "field": "pickProductBtn", "event": "click" },
+            "then": [{ "type": "setValues", "map": { "/pickerOpen": true } }]
+          }
+        ]
+      },
+      "children": {
+        "confirmDialog": {
+          "a2ui": [
+            { "beginRendering": { "surfaceId": "main", "catalogId": "basic" } },
+            { "surfaceUpdate": { "surfaceId": "main", "components": [
+              { "id": "root", "component": "Row", "props": { "children": ["confirmText", "confirmActions"], "gap": 16 } },
+              { "id": "confirmText", "component": "Text", "props": { "text": "确定要提交此订单吗？提交后将创建新订单。" } },
+              { "id": "confirmActions", "component": "Row", "props": { "children": ["confirmOkBtn", "confirmCancelBtn"], "gap": 8 } },
+              { "id": "confirmOkBtn", "component": "Button", "props": { "label": "确定提交", "variant": "primary", "reactionId": "doConfirm" } },
+              { "id": "confirmCancelBtn", "component": "Button", "props": { "label": "取消", "variant": "secondary", "reactionId": "doCancel" } }
+            ] } },
+            { "updateDataModel": { "surfaceId": "main", "path": "/confirmed", "value": false } }
+          ],
+          "logic": {
+            "reactions": [
+              {
+                "id": "doConfirm",
+                "when": { "field": "confirmOkBtn", "event": "click" },
+                "then": [
+                  { "type": "setValues", "map": { "/shared/dialogResult": "confirmed" } },
+                  { "type": "setValues", "map": { "/parent/confirmOpen": false } }
+                ]
+              },
+              {
+                "id": "doCancel",
+                "when": { "field": "confirmCancelBtn", "event": "click" },
+                "then": [
+                  { "type": "setValues", "map": { "/shared/dialogResult": "cancelled" } },
+                  { "type": "setValues", "map": { "/parent/confirmOpen": false } }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

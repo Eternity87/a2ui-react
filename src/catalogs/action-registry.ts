@@ -50,4 +50,20 @@ export const actionRegistry = {
       target: { type: 'string', required: true, description: '目标 JSON Pointer 路径' },
     },
   },
+  navigate: {
+    type: 'navigate',
+    description: '跨页面导航，携带 URL 参数到目标页面',
+    params: {
+      pageId: { type: 'string', required: true, description: '目标页面 ID（pages 对象的 key）' },
+      params: { type: 'object', description: '导航参数字典，值可为静态值或路径引用（/fieldName）' },
+    },
+  },
+  schedule: {
+    type: 'schedule',
+    description: '定时轮询：按 interval(ms) 间隔重复执行 then 中的 Action 链。页面关闭时自动清除',
+    params: {
+      interval: { type: 'number', defaultValue: 30000, description: '轮询间隔(ms)，默认 30 秒' },
+      then: { type: 'array', required: true, description: '定时执行的 Action 列表' },
+    },
+  },
 } as const
