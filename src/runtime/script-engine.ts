@@ -18,6 +18,8 @@ interface ScriptServices {
   navigate?: (pageId: string, params: Record<string, any>) => void
   /** 触发该 reaction 的原始 action */
   action?: any
+  /** API 执行器，供 apiRequest() 辅助函数调用 */
+  apiExecutor?: (req: { url: string; method: string; params?: Record<string, any>; body?: Record<string, any> }) => Promise<{ data: any }>
 }
 
 /** 执行一段 JS 代码，在白名单沙箱中注入服务变量 */
@@ -30,9 +32,16 @@ export function executeScript(code: string, services: ScriptServices): void {
       return services.pipeEngine.evaluate(steps)
     }
 
+    // apiRequest 辅助函数（脚本中可用 await apiRequest({ url: '/api/xxx' })）
+    const apiRequest = services.apiExecutor
+      ? (req: { url: string; method?: string; params?: Record<string, any>; body?: Record<string, any> }) =>
+          services.apiExecutor!({ ...req, method: req.method ?? 'GET' }).then(r => r.data)
+      : null
+
     safeEvalScript(code, {
       dataModel: services.dataModel,
       pipe,
+      apiRequest,
       toast: services.toast,
       sharedStore: services.sharedStore,
       navigate: services.navigate ?? null,

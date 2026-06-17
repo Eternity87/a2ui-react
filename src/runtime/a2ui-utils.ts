@@ -42,6 +42,10 @@ const SANDBOX_GLOBALS: Record<string, any> = {
   undefined,
   isArray: Array.isArray,
   NaN, Infinity,
+  // 调试工具
+  console,
+  setTimeout,
+  clearTimeout,
 }
 
 /**

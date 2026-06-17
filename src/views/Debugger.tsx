@@ -476,6 +476,10 @@ export function Debugger() {
   const setCurrentSurfaceIdRef = useRef(a2ui.setCurrentSurfaceId)
   setCurrentSurfaceIdRef.current = a2ui.setCurrentSurfaceId
 
+  // ref 保存最新 scripts，供 ReactionEngine 的 onExecuteReaction 回调和 click 事件使用
+  const scriptsRef = useRef(scripts)
+  scriptsRef.current = scripts
+
   // StrictMode 下该 effect 会被双调。boot() 有幂等守卫，cleanup 确保完整清理。
   useEffect(() => {
     const surface = getSurfaceRef.current(currentEditPage)
@@ -501,6 +505,31 @@ export function Debugger() {
         setCurrentEditPage(pageId)
         setCurrentSurfaceIdRef.current(pageId)
       },
+      // init/change 事件触发时优先检查自定义脚本
+      onExecuteReaction: (rid) => {
+        const script = scriptsRef.current[rid]
+        if (!script || !surface) return false
+        const pe = new PipeEngine((surface.dataModel.get('/') ?? {}) as Record<string, any>)
+        executeScript(script, {
+          dataModel: surface.dataModel,
+          pipeEngine: pe,
+          apiExecutor: createMockApiExecutor(),
+          toast: (msg, type = 'info') => setToast({ msg, type }),
+          sharedStore: useSharedStore,
+          navigate: (pageId, params) => {
+            const ts = getSurfaceRef.current(pageId)
+            if (ts && params) {
+              for (const [k, v] of Object.entries(params)) {
+                ts.dataModel.set(`/navParams/${k}`, v)
+              }
+            }
+            setCurrentEditPage(pageId)
+            setCurrentSurfaceIdRef.current(pageId)
+          },
+          action: null,
+        })
+        return true
+      },
     })
     engine.boot()
     engineRef.current = engine
@@ -522,8 +551,6 @@ export function Debugger() {
   // ===== Action 事件 → ReactionEngine / ScriptEngine =====
 
   // ref 保存最新值，避免 effect 因 unstable 依赖频繁重建
-  const scriptsRef = useRef(scripts)
-  scriptsRef.current = scripts
   const currentEditPageRef2 = useRef(currentEditPage)
   currentEditPageRef2.current = currentEditPage
 
@@ -542,6 +569,7 @@ export function Debugger() {
           executeScript(scriptsRef.current[rid], {
             dataModel: surface.dataModel,
             pipeEngine,
+            apiExecutor: createMockApiExecutor(),
             toast: (msg, type = 'info') => setToast({ msg, type }),
             sharedStore: useSharedStore,
             navigate: (pageId, params) => {

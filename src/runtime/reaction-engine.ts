@@ -58,6 +58,8 @@ interface ReactionServices {
   sharedStore?: SharedStoreApi
   /** 父页面 DataModel（用于子 surface 的 /parent/ 路径写回父 DataModel） */
   parentDataModel?: DataModel
+  /** 执行 reaction 前回调。返回 true 表示已由外部脚本处理，跳过 JSON 链。 */
+  onExecuteReaction?: (reactionId: string) => boolean
 }
 
 /**
@@ -199,6 +201,9 @@ export class ReactionEngine {
 
   /** 顺序执行 Reaction 的 then 动作链（await 保证顺序） */
   private async executeChain(reaction: ReactionDef, trigger?: { newVal: any; oldVal: any }) {
+    // 外部脚本优先：如果注册了 onExecuteReaction 且它处理了该 reaction，跳过 JSON 链
+    if (this.services.onExecuteReaction?.(reaction.id)) return
+
     const ctx: ExecutionContext = { trigger, lastResponse: null }
     try {
       for (const action of reaction.then) {

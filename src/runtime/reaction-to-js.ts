@@ -14,6 +14,7 @@ const API_HEADER = [
   '// 可用全局变量:',
   '//   dataModel    — DataModel 实例 (get/set/subscribe)',
   '//   pipe         — pipe(steps) 执行管道计算',
+  '//   apiRequest   — await apiRequest({ url, method?, params?, body? }) 调用 API',
   '//   toast        — toast(message, variant) 弹出提示',
   '//   sharedStore  — 跨页面共享状态 (getState/setState)',
   '//   navigate     — navigate(pageId, params) 页面跳转',
