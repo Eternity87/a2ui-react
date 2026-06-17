@@ -77,7 +77,8 @@ export function safeEvalScript(code: string, vars: Record<string, any> = {}): vo
   const keys = Object.keys(allVars)
   const values = Object.values(allVars)
 
-  const fn = new Function(...keys, `"use strict";\n${code}`)
+  // async IIFE 包裹，支持用户代码中的 await（如 await apiRequest(...)）
+  const fn = new Function(...keys, `"use strict";\nreturn (async () => {\n${code}\n})()`)
   fn(...values)
 }
 

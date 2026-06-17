@@ -47,8 +47,8 @@ export function executeScript(code: string, services: ScriptServices): void {
 /** 校验用户编辑的 JS 代码能否被解析（语法检查 + 沙箱白名单检查） */
 export function validateScript(code: string): { valid: boolean; error?: string } {
   try {
-    // 确保能被 new Function 解析
-    new Function(`"use strict";\n${code}`)
+    // async IIFE 包裹以支持 await（与 safeEvalScript 执行方式一致）
+    new Function(`"use strict"; return (async () => { ${code} })()`)
     return { valid: true }
   } catch (err: any) {
     return { valid: false, error: err?.message || '未知错误' }
