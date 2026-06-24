@@ -41,7 +41,7 @@ import { registerChildPage } from '@/runtime/page-context'
 import { TreeNode } from '@/views/TreeNode'
 import { PageSelector } from '@/views/PageSelector'
 import { A2uiSurface } from '@a2ui/react/v0_9'
-import demoDefault from '@/demo5.json'
+import demoDefault from '@/demo.json'
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { json } from '@codemirror/lang-json'
@@ -127,6 +127,8 @@ function useCodeMirror(initialDoc: string, opts?: { language?: 'json' | 'javascr
   const optsRef = useRef(opts)
   optsRef.current = opts
 
+  // 依赖数组为空是刻意为之：通过 optsRef 读取最新 options，避免 StrictMode 下重建回调。
+  // create 仅由 Dialog 的 open/close 生命周期手动调用，不依赖 React 重渲染触发。
   const create = useCallback(() => {
     if (!containerRef.current || viewRef.current) return
     const currentOpts = optsRef.current
@@ -170,6 +172,218 @@ interface PageEditorState {
   children?: Record<string, any>
 }
 
+type DragSource =
+  | { type: 'palette'; componentType: string }
+  | { type: 'tree'; componentId: string }
+  | { type: 'column'; tableId: string; colIndex: number }
+
+type DropPosition = 'before' | 'after' | 'inside' | 'addColumn'
+
+// palette → DataTable 列映射
+const COLUMN_ELIGIBLE: Record<string, { cellType: string; defaultLabel: string }> = {
+  Text: { cellType: 'text', defaultLabel: '文本列' },
+  TextField: { cellType: 'input', defaultLabel: '输入列' },
+  Select: { cellType: 'select', defaultLabel: '选择列' },
+}
+
+function serializeComponentsForA2UI(components: any[]): any[] {
+  return components.map(c => {
+    if (c && typeof c === 'object' && 'props' in c) {
+      const { id, component, props } = c
+      return { id, component, props: structuredClone(props ?? {}) }
+    }
+    return c
+  })
+}
+
+// ================================================================
+//  EditorSurface — 编辑模式下的交互渲染区
+// ================================================================
+
+interface EditorSurfaceProps {
+  surface: any
+  renderKey: number
+  currentEditPage: string
+  selectedId: string | null
+  dragSource: DragSource | null
+  compMap: Map<string, any>
+  onSelect: (id: string) => void
+  onCanvasDragStart: (e: React.DragEvent, componentId: string) => void
+  onCanvasDrop: (targetId: string | null, position: DropPosition) => void
+  onDragEnd: () => void
+}
+
+function EditorSurface({
+  surface, renderKey, currentEditPage, selectedId, dragSource, compMap,
+  onSelect, onCanvasDragStart, onCanvasDrop, onDragEnd,
+}: EditorSurfaceProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [canvasDrop, setCanvasDrop] = useState<{ targetId: string | null; position: DropPosition; rect?: DOMRect } | null>(null)
+
+  // 通过坐标查找组件（穿透透明 overlay 和 pointer-events: none 的节点）
+  const findComponentAt = useCallback((x: number, y: number): string | null => {
+    const overlay = containerRef.current?.querySelector('.editor-overlay') as HTMLElement | null
+    if (overlay) overlay.style.display = 'none'
+    const el = document.elementFromPoint(x, y)
+    if (overlay) overlay.style.display = ''
+    const wrapper = el?.closest('[data-a2ui-id]') as HTMLElement | null
+    return wrapper ? wrapper.getAttribute('data-a2ui-id') : null
+  }, [])
+
+  const getComponentBounds = useCallback((id: string): DOMRect | null => {
+    const wrapper = containerRef.current?.querySelector(`[data-a2ui-id="${id}"]`) as HTMLElement | null
+    if (!wrapper) return null
+    const rects = Array.from(wrapper.children)
+      .map(child => (child as HTMLElement).getBoundingClientRect())
+      .filter(rect => rect.width > 0 || rect.height > 0)
+    if (rects.length === 0) return null
+    const left = Math.min(...rects.map(r => r.left))
+    const top = Math.min(...rects.map(r => r.top))
+    const right = Math.max(...rects.map(r => r.right))
+    const bottom = Math.max(...rects.map(r => r.bottom))
+    return DOMRect.fromRect({ x: left, y: top, width: right - left, height: bottom - top })
+  }, [])
+
+  const getDropInfo = useCallback((e: React.DragEvent): { targetId: string | null; position: DropPosition; rect?: DOMRect } => {
+    const targetId = findComponentAt(e.clientX, e.clientY)
+    if (!targetId) return { targetId: null, position: 'inside' }
+
+    const targetComp = compMap.get(targetId)
+    const rect = getComponentBounds(targetId) ?? undefined
+    if (!rect) return { targetId, position: canHaveChildren(targetComp) ? 'inside' : 'after' }
+
+    const y = e.clientY - rect.top
+    if (
+      dragSource?.type === 'palette' &&
+      targetComp?.component === 'DataTable' &&
+      COLUMN_ELIGIBLE[dragSource.componentType] &&
+      y > rect.height * 0.65
+    ) {
+      return { targetId, position: 'addColumn', rect }
+    }
+
+    let position: DropPosition
+    if (y < rect.height * 0.3) position = 'before'
+    else if (y > rect.height * 0.7) position = 'after'
+    else if (canHaveChildren(targetComp)) position = 'inside'
+    else position = y < rect.height * 0.5 ? 'before' : 'after'
+    return { targetId, position, rect }
+  }, [compMap, dragSource, findComponentAt, getComponentBounds])
+
+  // 点击选中
+  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
+    const id = findComponentAt(e.clientX, e.clientY)
+    if (id) onSelect(id)
+  }, [onSelect, findComponentAt])
+
+  // 悬停高亮
+  const handleOverlayMouseMove = useCallback((e: React.MouseEvent) => {
+    setHoveredId(findComponentAt(e.clientX, e.clientY))
+  }, [findComponentAt])
+
+  // 选中/悬停高亮：直接操作 DOM 样式
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    container.querySelectorAll('.editor-selected, .editor-hovered').forEach(el => {
+      el.classList.remove('editor-selected', 'editor-hovered')
+    })
+
+    if (selectedId) {
+      const wrapper = container.querySelector(`[data-a2ui-id="${selectedId}"]`)
+      if (wrapper) {
+        for (let i = 0; i < wrapper.children.length; i++) {
+          wrapper.children[i].classList.add('editor-selected')
+        }
+      }
+    }
+    if (hoveredId && hoveredId !== selectedId) {
+      const wrapper = container.querySelector(`[data-a2ui-id="${hoveredId}"]`)
+      if (wrapper) {
+        for (let i = 0; i < wrapper.children.length; i++) {
+          wrapper.children[i].classList.add('editor-hovered')
+        }
+      }
+    }
+  }, [selectedId, hoveredId, renderKey])
+
+  return (
+    <div
+      ref={containerRef}
+      className="bg-white rounded-lg shadow-sm min-h-[200px] ring-2 ring-amber-300 relative"
+      onDragOver={e => {
+        if (!dragSource) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = dragSource.type === 'palette' ? 'copy' : 'move'
+      }}
+      onDrop={e => {
+        if (!dragSource) return
+        e.preventDefault()
+        e.stopPropagation()
+        onCanvasDrop(null, 'inside')
+      }}
+    >
+      {/* A2UI 渲染层：由上方透明层接管交互；查找组件时会临时隐藏透明层 */}
+      <div className="p-5" style={{ userSelect: 'none' }}>
+        <A2uiSurface key={`${currentEditPage}-${renderKey}`} surface={surface} />
+      </div>
+      {/* 透明交互层：捕获点击/悬停，通过坐标定位组件 */}
+      <div
+        className="editor-overlay absolute inset-0 z-10"
+        draggable={Boolean(hoveredId)}
+        onClick={handleOverlayClick}
+        onMouseMove={handleOverlayMouseMove}
+        onMouseLeave={() => setHoveredId(null)}
+        onDragStart={e => {
+          const id = findComponentAt(e.clientX, e.clientY) ?? hoveredId
+          if (!id) return
+          onCanvasDragStart(e, id)
+        }}
+        onDragOver={e => {
+          if (!dragSource) return
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = dragSource.type === 'palette' ? 'copy' : 'move'
+          setCanvasDrop(getDropInfo(e))
+        }}
+        onDragLeave={() => setCanvasDrop(null)}
+        onDrop={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          const info = canvasDrop ?? getDropInfo(e)
+          onCanvasDrop(info.targetId, info.position)
+          setCanvasDrop(null)
+        }}
+        onDragEnd={() => {
+          setCanvasDrop(null)
+          onDragEnd()
+        }}
+      />
+      {canvasDrop && (
+        <div
+          className={[
+            'editor-drop-indicator pointer-events-none absolute z-20',
+            canvasDrop.position === 'inside' ? 'editor-drop-inside' : '',
+            canvasDrop.position === 'addColumn' ? 'editor-drop-add-column' : '',
+          ].filter(Boolean).join(' ')}
+          style={canvasDrop.rect ? {
+            left: canvasDrop.rect.left - (containerRef.current?.getBoundingClientRect().left ?? 0),
+            top: canvasDrop.position === 'after'
+              ? canvasDrop.rect.bottom - (containerRef.current?.getBoundingClientRect().top ?? 0) - 1
+              : canvasDrop.rect.top - (containerRef.current?.getBoundingClientRect().top ?? 0),
+            width: canvasDrop.rect.width,
+            height: canvasDrop.position === 'inside' || canvasDrop.position === 'addColumn' ? canvasDrop.rect.height : 2,
+          } : {
+            inset: 8,
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
 // ================================================================
 //  主组件：Debugger
 // ================================================================
@@ -183,8 +397,8 @@ export function Debugger() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set())
   const [paletteFilter, setPaletteFilter] = useState('')
-  const [dragSource, setDragSource] = useState<{ type: 'palette'; componentType: string } | { type: 'tree'; componentId: string } | { type: 'column'; tableId: string; colIndex: number } | null>(null)
-  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: 'before' | 'after' | 'inside' | 'addColumn' } | null>(null)
+  const [dragSource, setDragSource] = useState<DragSource | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<{ targetId: string; position: DropPosition } | null>(null)
   // ref 保存最新值，避免拖拽事件闭包中使用过期 state
   const dragSourceRef = useRef(dragSource)
   dragSourceRef.current = dragSource
@@ -228,11 +442,14 @@ export function Debugger() {
       .map(cat => ({ category: cat, label: labelMap[cat] ?? cat, items: map.get(cat)! }))
   }, [paletteFilter])
 
+  const [viewMode, setViewMode] = useState<'preview' | 'editor'>('preview')
   const idCounter = useRef(1)
 
   // ---- 引擎与数据 ----
   const engineRef = useRef<ReactionEngine | null>(null)
   const [renderKey, setRenderKey] = useState(0)
+  const pagesRef = useRef(pages)
+  pagesRef.current = pages
 
   // 当前编辑页的状态（方便访问）
   const currentPage = pages[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
@@ -245,7 +462,9 @@ export function Debugger() {
     setPages(prev => {
       const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
       const newComps = typeof updater === 'function' ? updater(cur.components) : updater
-      return { ...prev, [currentEditPage]: { ...cur, components: newComps } }
+      const next = { ...prev, [currentEditPage]: { ...cur, components: newComps } }
+      pagesRef.current = next
+      return next
     })
   }, [currentEditPage])
 
@@ -253,14 +472,18 @@ export function Debugger() {
     setPages(prev => {
       const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
       const newRx = typeof updater === 'function' ? updater(cur.reactions) : updater
-      return { ...prev, [currentEditPage]: { ...cur, reactions: newRx } }
+      const next = { ...prev, [currentEditPage]: { ...cur, reactions: newRx } }
+      pagesRef.current = next
+      return next
     })
   }, [currentEditPage])
 
   const saveScript = useCallback((reactionId: string, code: string) => {
     setPages(prev => {
       const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
-      return { ...prev, [currentEditPage]: { ...cur, scripts: { ...cur.scripts, [reactionId]: code } } }
+      const next = { ...prev, [currentEditPage]: { ...cur, scripts: { ...cur.scripts, [reactionId]: code } } }
+      pagesRef.current = next
+      return next
     })
   }, [currentEditPage])
 
@@ -269,7 +492,9 @@ export function Debugger() {
       const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
       const next = { ...cur.scripts }
       delete next[reactionId]
-      return { ...prev, [currentEditPage]: { ...cur, scripts: next } }
+      const nextPages = { ...prev, [currentEditPage]: { ...cur, scripts: next } }
+      pagesRef.current = nextPages
+      return nextPages
     })
   }, [currentEditPage])
 
@@ -389,7 +614,7 @@ export function Debugger() {
     let maxN = 0
 
     for (const [pageId, page] of Object.entries(normalized.pages)) {
-      const su = page.a2ui?.find((m: any) => 'surfaceUpdate' in m)
+      const su = page.a2ui?.find((m): m is { surfaceUpdate: { surfaceId: string; components: any[] } } => 'surfaceUpdate' in m)
       const rawComps = su ? structuredClone(su.surfaceUpdate.components) as any[] : []
       const comps = normalizeV08Components(rawComps) // v0.8 → v0.9 平级格式
       // 归一化：v0.9 平级 props → legacy 嵌套 props
@@ -425,6 +650,7 @@ export function Debugger() {
     }
 
     idCounter.current = maxN + 1
+    pagesRef.current = newPages
     setPages(newPages)
     setSelectedId(null)
     setCollapsedIds(new Set())
@@ -474,7 +700,19 @@ export function Debugger() {
   const setCurrentSurfaceIdRef = useRef(a2ui.setCurrentSurfaceId)
   setCurrentSurfaceIdRef.current = a2ui.setCurrentSurfaceId
 
+  // ref 保存最新 scripts，供 ReactionEngine 的 onExecuteReaction 回调和 click 事件使用
+  const scriptsRef = useRef(scripts)
+  scriptsRef.current = scripts
+
+  // StrictMode 下该 effect 会被双调。boot() 有幂等守卫，cleanup 确保完整清理。
   useEffect(() => {
+    // 编辑模式下不启动 ReactionEngine（仅渲染组件，不加载 logic）
+    if (viewMode === 'editor') {
+      engineRef.current?.destroy()
+      engineRef.current = null
+      return
+    }
+
     const surface = getSurfaceRef.current(currentEditPage)
     if (!surface || reactions.length === 0) {
       engineRef.current?.destroy()
@@ -498,6 +736,31 @@ export function Debugger() {
         setCurrentEditPage(pageId)
         setCurrentSurfaceIdRef.current(pageId)
       },
+      // init/change 事件触发时优先检查自定义脚本
+      onExecuteReaction: (rid) => {
+        const script = scriptsRef.current[rid]
+        if (!script || !surface) return false
+        const pe = new PipeEngine((surface.dataModel.get('/') ?? {}) as Record<string, any>)
+        executeScript(script, {
+          dataModel: surface.dataModel,
+          pipeEngine: pe,
+          apiExecutor: createMockApiExecutor(),
+          toast: (msg, type = 'info') => setToast({ msg, type }),
+          sharedStore: useSharedStore,
+          navigate: (pageId, params) => {
+            const ts = getSurfaceRef.current(pageId)
+            if (ts && params) {
+              for (const [k, v] of Object.entries(params)) {
+                ts.dataModel.set(`/navParams/${k}`, v)
+              }
+            }
+            setCurrentEditPage(pageId)
+            setCurrentSurfaceIdRef.current(pageId)
+          },
+          action: null,
+        })
+        return true
+      },
     })
     engine.boot()
     engineRef.current = engine
@@ -507,22 +770,27 @@ export function Debugger() {
     pushSim.start()
 
     return () => {
-      pushSim.stop()
-      engine.destroy()
-      engineRef.current = null
+      // try/finally 确保 pushSim 和 engine 都被清理，即使其中一个抛错
+      try { pushSim.stop() } finally {
+        try { engine.destroy() } finally {
+          engineRef.current = null
+        }
+      }
     }
-  }, [currentEditPage, reactions])
+  }, [currentEditPage, reactions, viewMode])
 
   // ===== Action 事件 → ReactionEngine / ScriptEngine =====
 
   // ref 保存最新值，避免 effect 因 unstable 依赖频繁重建
-  const scriptsRef = useRef(scripts)
-  scriptsRef.current = scripts
   const currentEditPageRef2 = useRef(currentEditPage)
   currentEditPageRef2.current = currentEditPage
 
   useEffect(() => {
-    return a2ui.onAction((action: any) => {
+    if (viewMode === 'editor') return
+    const surfaceForAction = getSurfaceRef.current(currentEditPage)
+    if (!surfaceForAction) return
+
+    const actionSub = surfaceForAction.onAction.subscribe((action: any) => {
       if (action.name === 'a2ui.click' && action.context?.reactionId) {
         const rid = action.context.reactionId as string
         const pageId = currentEditPageRef2.current
@@ -536,6 +804,7 @@ export function Debugger() {
           executeScript(scriptsRef.current[rid], {
             dataModel: surface.dataModel,
             pipeEngine,
+            apiExecutor: createMockApiExecutor(),
             toast: (msg, type = 'info') => setToast({ msg, type }),
             sharedStore: useSharedStore,
             navigate: (pageId, params) => {
@@ -555,7 +824,8 @@ export function Debugger() {
         }
       }
     })
-  }, [a2ui.onAction])
+    return () => actionSub.unsubscribe()
+  }, [currentEditPage, renderKey, viewMode])
 
   // ===== Toast =====
 
@@ -591,10 +861,7 @@ export function Debugger() {
 
   const generateId = (type: string) => `${type.toLowerCase()}${idCounter.current++}`
 
-  function addComponent(type: string) {
-    const def = componentCatalog[type]
-    if (!def) return
-    const id = generateId(type)
+  function buildDefaultProps(def: ComponentDef): Record<string, any> {
     const props: Record<string, any> = {}
     Object.entries(def.props).forEach(([key, pd]) => {
       if (pd.defaultValue !== undefined) props[key] = pd.defaultValue
@@ -604,16 +871,28 @@ export function Debugger() {
       else if (pd.type === 'boolean') props[key] = false
       else if (pd.type === 'array') props[key] = []
     })
-    const newComp = { id, component: type, props }
+    return props
+  }
+
+  function createComponentFromCatalog(type: string) {
+    const def = componentCatalog[type]
+    if (!def) return null
+    const id = generateId(type)
+    return { id, component: type, props: buildDefaultProps(def as ComponentDef) }
+  }
+
+  function addComponent(type: string) {
+    const newComp = createComponentFromCatalog(type)
+    if (!newComp) return
     if (selectedComponent && canHaveChildren(selectedComponent)) {
       setComponents(prev => prev.map(c =>
         c.id === selectedId
-          ? { ...c, props: { ...c.props, children: [...(c.props.children || []), id] } }
+          ? { ...c, props: { ...c.props, children: [...(c.props.children || []), newComp.id] } }
           : c
       ))
     }
     setComponents(prev => [...prev, newComp])
-    setSelectedId(id)
+    setSelectedId(newComp.id)
   }
 
   function deleteComponent() {
@@ -636,7 +915,9 @@ export function Debugger() {
   function clearPage() {
     setPages(prev => {
       const cur = prev[currentEditPage] ?? { components: [], reactions: [], scripts: {}, initialDataModel: {} }
-      return { ...prev, [currentEditPage]: { ...cur, components: [], reactions: [], scripts: {}, initialDataModel: {} } }
+      const next = { ...prev, [currentEditPage]: { ...cur, components: [], reactions: [], scripts: {}, initialDataModel: {} } }
+      pagesRef.current = next
+      return next
     })
     setSelectedId(null)
     // 同步清空 SurfaceModel 中的运行时 dataModel
@@ -689,14 +970,6 @@ export function Debugger() {
     })
   }
 
-  // ===== palette → DataTable 列映射 =====
-
-  const COLUMN_ELIGIBLE: Record<string, { cellType: string; defaultLabel: string }> = {
-    Text: { cellType: 'text', defaultLabel: '文本列' },
-    TextField: { cellType: 'input', defaultLabel: '输入列' },
-    Select: { cellType: 'select', defaultLabel: '选择列' },
-  }
-
   function addColumnToTable(tableId: string, componentType: string, insertIndex?: number) {
     const mapping = COLUMN_ELIGIBLE[componentType]
     if (!mapping) return
@@ -715,6 +988,64 @@ export function Debugger() {
       }
       return { ...c, props: { ...c.props, columns: cols } }
     }))
+  }
+
+  function addPaletteComponentAt(componentType: string, targetId: string | null, position: DropPosition) {
+    if (position === 'addColumn' && targetId) {
+      addColumnToTable(targetId, componentType)
+      return
+    }
+
+    const newComp = createComponentFromCatalog(componentType)
+    if (!newComp) return
+
+    if (!targetId) {
+      setComponents(prev => [...prev, newComp])
+      setSelectedId(newComp.id)
+      return
+    }
+
+    setComponents(prev => insertIntoTree([...prev, newComp], newComp.id, targetId, position as 'before' | 'after' | 'inside'))
+    setSelectedId(newComp.id)
+  }
+
+  function moveComponentAt(componentId: string, targetId: string | null, position: DropPosition) {
+    if (position === 'addColumn') return
+    if (targetId && (componentId === targetId || collectDescendants(compMap, componentId).has(targetId))) return
+
+    setComponents(prev => {
+      const oldParent = getParentId(prev, componentId)
+      let next = prev.map(c => {
+        if (c.id === oldParent && c.props?.children) {
+          return { ...c, props: { ...c.props, children: c.props.children.filter((id: string) => id !== componentId) } }
+        }
+        return { ...c, props: { ...c.props } }
+      })
+
+      if (!targetId) {
+        const moved = next.find(c => c.id === componentId)
+        if (!moved) return next
+        next = next.filter(c => c.id !== componentId)
+        return [...next, moved]
+      }
+
+      return insertIntoTree(next, componentId, targetId, position as 'before' | 'after' | 'inside')
+    })
+    setSelectedId(componentId)
+  }
+
+  function handleCanvasDrop(targetId: string | null, position: DropPosition) {
+    const ds = dragSourceRef.current
+    if (!ds) return
+
+    if (ds.type === 'palette') {
+      addPaletteComponentAt(ds.componentType, targetId, position)
+    } else if (ds.type === 'tree') {
+      moveComponentAt(ds.componentId, targetId, position)
+    }
+
+    setDragSource(null)
+    setDropIndicator(null)
   }
 
   // ===== 拖拽 =====
@@ -851,7 +1182,7 @@ export function Debugger() {
     if (!ds || !di) return
 
     const [tableId, colIdxStr] = virtualId.split('$col$')
-    const targetIndex = parseInt(colIdxStr)
+    const targetIndex = parseInt(colIdxStr ?? '')
     if (isNaN(targetIndex)) return
 
     if (ds.type === 'column') {
@@ -917,10 +1248,9 @@ export function Debugger() {
   const jsonCm = useCodeMirror('')
   const dmCm = useCodeMirror('')
 
-  function openJsonDialog() {
-    // 序列化所有页面为多页面 JSON 格式
+  function buildPageJson(sourcePages: Record<string, PageEditorState>) {
     const serializedPages: Record<string, any> = {}
-    for (const [pageId, ps] of Object.entries(pages)) {
+    for (const [pageId, ps] of Object.entries(sourcePages)) {
       const logic: any = { reactions: ps.reactions }
       if (ps.scripts && Object.keys(ps.scripts).length > 0) {
         logic.scripts = ps.scripts
@@ -928,19 +1258,23 @@ export function Debugger() {
       serializedPages[pageId] = {
         a2ui: [
           { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
-          { surfaceUpdate: { surfaceId: 'main', components: ps.components } },
+          { surfaceUpdate: { surfaceId: 'main', components: serializeComponentsForA2UI(ps.components) } },
           ...dataModelToV09Messages('main', ps.initialDataModel),
         ],
         logic,
         ...(ps.children ? { children: ps.children } : {}),
       }
     }
-    // 多页→外层 pages 包裹；单页→兼容旧格式（顶层 a2ui/logic）
-    const output = Object.keys(serializedPages).length === 1 && serializedPages['main']
+    return Object.keys(serializedPages).length === 1 && serializedPages['main']
       ? serializedPages['main']
       : { pages: serializedPages }
+  }
 
-    jsonCm.updateDoc(JSON.stringify(output, null, 2))
+  function getCurrentPageJsonText() {
+    return JSON.stringify(buildPageJson(pagesRef.current), null, 2)
+  }
+
+  function openJsonDialog() {
     setShowJsonDialog(true)
   }
 
@@ -951,15 +1285,23 @@ export function Debugger() {
     setShowDmDialog(true)
   }
 
-  // CodeMirror 生命周期管理：Dialog 打开→DOM就绪→创建 EditorView，关闭→销毁
+  // CodeMirror 生命周期：打开时创建 EditorView 并写入最新 JSON，pages 变化时同步更新
   useEffect(() => {
     if (showJsonDialog) {
-      const t = setTimeout(() => jsonCm.create(), 100)
+      const t = setTimeout(() => {
+        jsonCm.create()
+        jsonCm.updateDoc(getCurrentPageJsonText())
+      }, 100)
       return () => clearTimeout(t)
     } else {
       jsonCm.destroy()
     }
   }, [showJsonDialog])
+
+  useEffect(() => {
+    if (!showJsonDialog) return
+    jsonCm.updateDoc(getCurrentPageJsonText())
+  }, [pages, showJsonDialog])
 
   useEffect(() => {
     if (showDmDialog) {
@@ -1003,22 +1345,7 @@ export function Debugger() {
   // ===== 导出 =====
 
   function exportJson() {
-    const serializedPages: Record<string, any> = {}
-    for (const [pageId, ps] of Object.entries(pages)) {
-      serializedPages[pageId] = {
-        a2ui: [
-          { beginRendering: { surfaceId: 'main', catalogId: 'basic' } },
-          { surfaceUpdate: { surfaceId: 'main', components: ps.components } },
-          ...dataModelToV09Messages('main', ps.initialDataModel),
-        ],
-        logic: { reactions: ps.reactions },
-      }
-    }
-    const output = Object.keys(serializedPages).length === 1 && serializedPages['main']
-      ? serializedPages['main']
-      : { pages: serializedPages }
-
-    navigator.clipboard.writeText(JSON.stringify(output, null, 2))
+    navigator.clipboard.writeText(getCurrentPageJsonText())
       .then(() => showToast('已复制到剪贴板', 'success'))
   }
 
@@ -1163,6 +1490,17 @@ export function Debugger() {
             }}
           />
           <div className="w-px h-6 bg-gray-200" />
+          <div className="flex rounded overflow-hidden border">
+            <button
+              className={`px-3 py-1 text-xs transition-colors ${viewMode === 'preview' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              onClick={() => setViewMode('preview')}
+            >实时渲染</button>
+            <button
+              className={`px-3 py-1 text-xs transition-colors ${viewMode === 'editor' ? 'bg-blue-500 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+              onClick={() => setViewMode('editor')}
+            >页面编辑</button>
+          </div>
+          <div className="w-px h-6 bg-gray-200" />
           <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>上传 JSON</Button>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileUpload} />
           <Button size="sm" variant="outline" onClick={openJsonDialog}>显示 JSON</Button>
@@ -1172,16 +1510,42 @@ export function Debugger() {
           <Button size="sm" variant="outline" onClick={clearPage}>清空</Button>
         </div>
         <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-          <div className="text-xs text-gray-400 mb-2 uppercase">实时渲染预览 — {currentEditPage}</div>
+          <div className="text-xs text-gray-400 mb-2 uppercase">
+            {viewMode === 'editor' ? '页面编辑（仅渲染组件，不加载 logic）' : '实时渲染预览'} — {currentEditPage}
+          </div>
           {(() => {
             const surf = a2ui.getSurface(currentEditPage)
-            return surf ? (
+            if (!surf) {
+              return (
+                <div
+                  className="flex items-center justify-center h-[200px] bg-white rounded-lg shadow-sm text-gray-400 text-sm"
+                  onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    const type = e.dataTransfer.getData('text/plain')
+                    if (type && componentCatalog[type]) addPaletteComponentAt(type, null, 'inside')
+                  }}
+                >
+                  从左侧拖拽组件到此处
+                </div>
+              )
+            }
+            return viewMode === 'editor' ? (
+              <EditorSurface
+                surface={surf}
+                renderKey={renderKey}
+                currentEditPage={currentEditPage}
+                selectedId={selectedId}
+                dragSource={dragSource}
+                compMap={compMap}
+                onSelect={setSelectedId}
+                onCanvasDragStart={onTreeNodeDragStart}
+                onCanvasDrop={handleCanvasDrop}
+                onDragEnd={onDragEnd}
+              />
+            ) : (
               <div className="bg-white rounded-lg p-5 shadow-sm min-h-[200px]">
                 <A2uiSurface key={`${currentEditPage}-${renderKey}`} surface={surf} />
-              </div>
-            ) : (
-              <div className="flex items-center justify-center h-[200px] bg-white rounded-lg shadow-sm text-gray-400 text-sm">
-                从左侧拖拽组件到此处
               </div>
             )
           })()}
@@ -1500,6 +1864,11 @@ export function Debugger() {
         .drop-add-column { position: absolute; left: 4px; right: 4px; bottom: 0; height: 28px; display: flex; align-items: center; gap: 6px; z-index: 10; pointer-events: none; }
         .drop-add-column-bar { flex: 1; height: 2px; background: #52c41a; border-radius: 1px; }
         .drop-add-column-text { font-size: 11px; color: #52c41a; font-weight: 500; white-space: nowrap; }
+        .editor-selected { outline: 2px solid #3b82f6; outline-offset: 1px; border-radius: 1px; }
+        .editor-hovered { outline: 2px dashed #93c5fd; outline-offset: 1px; border-radius: 1px; }
+        .editor-drop-indicator { background: #2563eb; box-shadow: 0 0 0 1px rgba(37,99,235,0.2); border-radius: 2px; }
+        .editor-drop-inside { background: rgba(37,99,235,0.08); border: 1.5px dashed #2563eb; box-shadow: none; }
+        .editor-drop-add-column { background: rgba(22,163,74,0.08); border: 1.5px dashed #16a34a; box-shadow: none; }
       `}</style>
     </div>
   )

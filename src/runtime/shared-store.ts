@@ -36,7 +36,20 @@ export const useSharedStore = create<SharedState>()(
       clearNavParams: () => set({ navParams: {} }),
       setUserInfo: (info) => set({ userInfo: info }),
       setToken: (token) => set({ token }),
-      hydrate: (data) => set((state) => ({ ...state, ...data })),
+      hydrate: (data) => set((state) => {
+        // 仅允许写入已声明的 state key，过滤外部注入的未知字段
+        const allowed: Partial<Pick<SharedState, 'navParams' | 'userInfo' | 'token'>> = {}
+        if ('navParams' in data && typeof data.navParams === 'object' && data.navParams !== null) {
+          allowed.navParams = data.navParams as Record<string, any>
+        }
+        if ('userInfo' in data) {
+          allowed.userInfo = data.userInfo as Record<string, any> | null
+        }
+        if ('token' in data && (typeof data.token === 'string' || data.token === null)) {
+          allowed.token = data.token
+        }
+        return { ...state, ...allowed }
+      }),
     }),
     {
       name: 'a2ui-shared',

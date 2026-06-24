@@ -106,7 +106,12 @@ export function createA2UIComponent<P = Record<string, any>>(
         rawProps,
       }
 
-      return <RenderComponent {...(resolved as any)} {...meta} />
+      const componentId = meta.surfaceId
+      return (
+        <div data-a2ui-id={componentId} style={{ display: 'contents' }}>
+          <RenderComponent {...(resolved as any)} {...meta} />
+        </div>
+      )
     },
   )
 }
@@ -186,11 +191,13 @@ const TextFieldImpl = createA2UIComponent<{
  * Select — 下拉选择
  * options 支持 DataBinding { path } 或静态数组；由 resolveProps 解析
  */
+interface SelectOption { label: string; value: string }
+
 const SelectImpl = createA2UIComponent<{
-  label?: string; value?: any; options?: any[]; placeholder?: string; size?: string; width?: string
+  label?: string; value?: unknown; options?: SelectOption[]; placeholder?: string; size?: string; width?: string
 }>('Select', ({ label, value, options, placeholder, size, width, rawProps, dataContext }) => {
   const valuePath = getBindingPath(rawProps.value)
-  const opts: any[] = Array.isArray(options) ? options : []
+  const opts: SelectOption[] = Array.isArray(options) ? options : []
 
   return (
     <div className="flex flex-col gap-1" style={width ? { width } : undefined}>
@@ -205,7 +212,7 @@ const SelectImpl = createA2UIComponent<{
           <SelectValue placeholder={placeholder as string | undefined} />
         </SelectTrigger>
         <SelectContent>
-          {opts.map((opt: any) => (
+          {opts.map((opt) => (
             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
           ))}
         </SelectContent>
@@ -242,13 +249,16 @@ const DataTableImpl = createBinderlessComponentImplementation(
     const dm = context.dataContext.dataModel
     useDataModelSubscription(dm)
 
+    interface DataTableColumn { key: string; label: string; cellType?: string; cellProps?: Record<string, unknown>; width?: string }
+    interface DataTableRow { [key: string]: unknown }
+
     const rawProps = context.componentModel.properties
     const props = resolveProps(rawProps, dm)
-    const columns: any[] = props.columns ?? []
-    const rows: any[] = Array.isArray(props.value) ? props.value : []
+    const columns: DataTableColumn[] = props.columns ?? []
+    const rows: DataTableRow[] = Array.isArray(props.value) ? props.value : []
     const rawValuePath = getBindingPath(rawProps.value)
 
-    const renderCell = (col: any, scope: { row: any; rowIndex: number }) => {
+    const renderCell = (col: DataTableColumn, scope: { row: DataTableRow; rowIndex: number }) => {
       const cellValue = scope.row[col.key]
       const cellPath = rawValuePath
         ? `${rawValuePath}/${scope.rowIndex}/${col.key}`
@@ -258,24 +268,24 @@ const DataTableImpl = createBinderlessComponentImplementation(
       switch (cellType) {
         case 'input':
           return (
-            <Input className="h-8 text-xs" value={cellValue ?? ''}
+            <Input className="h-8 text-xs" value={String(cellValue ?? '')}
               onChange={e => context.dataContext.set(cellPath, (e.target as HTMLInputElement).value)} />
           )
         case 'number':
           return (
-            <Input type="number" className="h-8 text-xs" value={cellValue ?? ''}
+            <Input type="number" className="h-8 text-xs" value={Number(cellValue ?? 0)}
               onChange={e => context.dataContext.set(cellPath, Number((e.target as HTMLInputElement).value))} />
           )
         case 'select': {
-          let options = col.cellProps?.options ?? []
-          if (typeof options === 'string') {
-            try { options = JSON.parse(options) } catch { options = [] }
+          let options: SelectOption[] = (col.cellProps?.options as SelectOption[]) ?? []
+          if (typeof col.cellProps?.options === 'string') {
+            try { options = JSON.parse(col.cellProps.options) } catch { options = [] }
           }
           return (
-            <Select value={cellValue ?? ''} onValueChange={val => context.dataContext.set(cellPath, val)}>
+            <Select value={String(cellValue ?? '')} onValueChange={val => context.dataContext.set(cellPath, val)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {options.map((opt: any) => (
+                {options.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -287,11 +297,13 @@ const DataTableImpl = createBinderlessComponentImplementation(
       }
     }
 
+    const cid = context.componentModel.id
     return (
+      <div data-a2ui-id={cid} style={{ display: 'contents' }}>
       <Table>
         <TableHeader>
           <TableRow>
-            {columns.map((col: any) => (
+            {columns.map((col) => (
               <TableHead key={col.key} style={{ width: col.width }}>{col.label || col.key}</TableHead>
             ))}
           </TableRow>
@@ -304,9 +316,9 @@ const DataTableImpl = createBinderlessComponentImplementation(
               </TableCell>
             </TableRow>
           ) : (
-            rows.map((row: any, rowIndex: number) => (
-              <TableRow key={row.id ?? rowIndex}>
-                {columns.map((col: any) => (
+            rows.map((row, rowIndex) => (
+              <TableRow key={String(row.id ?? rowIndex)}>
+                {columns.map((col) => (
                   <TableCell key={col.key}>{renderCell(col, { row, rowIndex })}</TableCell>
                 ))}
               </TableRow>
@@ -314,6 +326,7 @@ const DataTableImpl = createBinderlessComponentImplementation(
           )}
         </TableBody>
       </Table>
+      </div>
     )
   },
 )
@@ -334,6 +347,26 @@ function chartContainerStyle(w: any): React.CSSProperties {
 }
 function chartWrapperStyle(h?: number): React.CSSProperties {
   return { width: '100%', height: h ?? 300 }
+}
+
+function getChartClickData(eventData: any): any {
+  if (!eventData) return {}
+  if (Array.isArray(eventData.activePayload) && eventData.activePayload[0]?.payload) {
+    return eventData.activePayload[0].payload
+  }
+  if (eventData.payload && typeof eventData.payload === 'object') {
+    return eventData.payload
+  }
+  return eventData
+}
+
+function dispatchChartClick(
+  dispatchAction: A2UIComponentMeta['dispatchAction'],
+  reactionId: string | undefined,
+  eventData: any,
+) {
+  if (!reactionId) return
+  dispatchAction('a2ui.click', { reactionId, clickData: getChartClickData(eventData) })
 }
 
 const BarChartImpl = createA2UIComponent<{
@@ -365,7 +398,7 @@ const BarChartImpl = createA2UIComponent<{
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
           <Bar dataKey={yField} barSize={barSize}
-            onClick={reactionId ? (d: any) => dispatchAction('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
             {hasCondition
               ? chartData.map((item, i) => {
                   const val = Number(item[yField ?? ''])
@@ -399,11 +432,11 @@ const LineChartImpl = createA2UIComponent<{
     ? (lastVal >= targetValue ? (colorAbove ?? '#52c41a') : (colorBelow ?? '#ff4d4f'))
     : (color ?? '#1890ff')
   return (
-    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs, cursor: reactionId ? 'pointer' : undefined }}
-      onClick={reactionId ? () => dispatchAction('a2ui.click', { reactionId, clickData: null }) : undefined}>
+    <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs, cursor: reactionId ? 'pointer' : undefined }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
       <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
-        <LineChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
+        <LineChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}
+          onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
           <YAxis tick={{ fontSize: fs }} />
@@ -455,7 +488,7 @@ const PieChartImpl = createA2UIComponent<{
             innerRadius={innerRadius ?? 0} outerRadius={outerRadius ?? 80}
             label={labelFn as any}
             labelLine={isOutside}
-            onClick={reactionId ? (d: any) => dispatchAction('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
             {chartData.map((item, i) => {
               if (hasCondition) {
                 const val = Number(item[valueField ?? ''])
@@ -494,7 +527,8 @@ const AreaChartImpl = createA2UIComponent<{
     <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
       <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
-        <AreaChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
+        <AreaChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}
+          onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
           {(showGrid ?? true) && <CartesianGrid strokeDasharray="3 3" />}
           <XAxis dataKey={xField} tick={{ fontSize: fs, angle: xTickAngle ?? 0 }} />
           <YAxis tick={{ fontSize: fs }} />
@@ -504,8 +538,7 @@ const AreaChartImpl = createA2UIComponent<{
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} />
           )}
           <Area type={((curveType ?? 'monotone') as any)} dataKey={yField ?? ''} stroke={areaColor} fill={areaColor} strokeWidth={strokeWidth ?? 2} fillOpacity={fillOpacity ?? 0.3}
-            label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
-            onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
+            label={(showDataLabel ?? false) ? { position: 'top' } : undefined} />
         </AreaChart>
       </ResponsiveContainer></div>
     </div>
@@ -541,7 +574,7 @@ const ComposedChartImpl = createA2UIComponent<{
             <ReferenceLine y={referenceValue} stroke={referenceColor ?? '#ff4d4f'} strokeDasharray="4 4" label={referenceLabel} yAxisId="left" />
           )}
           <Bar yAxisId="left" dataKey={yField ?? ''} fill={color ?? '#1890ff'}
-            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
             {hasCondition
               ? chartData.map((item, i) => {
                   const val = Number(item[yField ?? ''])
@@ -552,7 +585,7 @@ const ComposedChartImpl = createA2UIComponent<{
           </Bar>
           {yField2 && <Line yAxisId="right" type="monotone" dataKey={yField2} stroke={color2 ?? '#52c41a'} strokeWidth={2}
             label={(showDataLabel ?? false) ? { position: 'top' } : undefined}
-            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined} />}
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined} />}
         </ComposedChart>
       </ResponsiveContainer></div>
     </div>
@@ -590,7 +623,7 @@ const ScatterChartImpl = createA2UIComponent<{
           )}
           <Scatter data={chartData} fill={color ?? '#1890ff'}
             label={(showDataLabel ?? false) ? { dataKey: yField } : undefined}
-            onClick={reactionId ? (d: any) => dispatchAction('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
             {hasCond && chartData.map((item, i) => {
               const val = Number(item[yField ?? ''])
               return <Cell key={i} fill={val >= (targetValue ?? 0) ? aboveC : belowC} />
@@ -613,18 +646,59 @@ const RadarChartImpl = createA2UIComponent<{
   const fs = fontSize ?? 13
   const ff = fontFamily ?? DEFAULT_FONT
   const m = chartMargin ?? 16
+  const getRadarItemByIndex = (indexLike: unknown) => {
+    const index = typeof indexLike === 'number'
+      ? indexLike
+      : typeof indexLike === 'string'
+        ? Number(indexLike)
+        : NaN
+    return Number.isInteger(index) && index >= 0 && index < chartData.length
+      ? chartData[index]
+      : null
+  }
+  const dispatchRadarClick = (eventData: any) => {
+    const indexedItem =
+      getRadarItemByIndex(eventData?.activeTooltipIndex) ??
+      getRadarItemByIndex(eventData?.activeIndex) ??
+      getRadarItemByIndex(eventData?.index)
+    dispatchChartClick(dispatchAction, reactionId, indexedItem ?? eventData)
+  }
+  const renderDot = reactionId
+    ? (dotProps: any) => {
+        const item = getRadarItemByIndex(dotProps.index) ?? dotProps.payload ?? {
+          [nameKey ?? 'name']: dotProps.name,
+          [dataKey ?? 'value']: dotProps.value,
+        }
+        return (
+          <circle
+            cx={dotProps.cx}
+            cy={dotProps.cy}
+            r={5}
+            fill={color ?? '#1890ff'}
+            stroke="#fff"
+            strokeWidth={2}
+            style={{ cursor: 'pointer' }}
+            onClick={(event) => {
+              event.stopPropagation()
+              dispatchChartClick(dispatchAction, reactionId, item)
+            }}
+          />
+        )
+      }
+    : false
   return (
     <div style={{ ...chartContainerStyle(width), fontFamily: ff, fontSize: fs }}>
       {title && <div className="text-sm font-medium mb-2">{title}</div>}
       <div style={chartWrapperStyle(height)}><ResponsiveContainer width="100%" height="100%" debounce={1} minWidth={1} minHeight={1}>
-        <RadarChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}>
+        <RadarChart data={chartData} margin={{ top: m, right: m, bottom: m, left: m }}
+          onClick={reactionId ? dispatchRadarClick : undefined}>
           <PolarGrid />
           <PolarAngleAxis dataKey={nameKey} tick={{ fontSize: fs }} />
           <PolarRadiusAxis tick={{ fontSize: fs }} />
           {(showTooltip ?? true) && <Tooltip contentStyle={{ fontSize: fs }} />}
           {(showLegend ?? true) && <Legend wrapperStyle={{ fontSize: fs }} />}
           <Radar name={title ?? ''} dataKey={dataKey ?? ''} stroke={color ?? '#1890ff'} fill={color ?? '#1890ff'} fillOpacity={fillOpacity ?? 0.3} strokeWidth={strokeWidth ?? 2}
-            onClick={reactionId ? () => dispatchAction!('a2ui.click', { reactionId, clickData: null }) : undefined} />
+            dot={renderDot as any} />
         </RadarChart>
       </ResponsiveContainer></div>
     </div>
@@ -654,7 +728,7 @@ const RadialBarChartImpl = createA2UIComponent<{
           {(showTooltip ?? true) && <Tooltip contentStyle={{ fontSize: fs }} />}
           {(showLegend ?? true) && <Legend wrapperStyle={{ fontSize: fs }} />}
           <RadialBar dataKey={valueKey ?? ''} background
-            onClick={reactionId ? (d: any) => dispatchAction!('a2ui.click', { reactionId, clickData: d }) : undefined}>
+            onClick={reactionId ? (d: any) => dispatchChartClick(dispatchAction, reactionId, d) : undefined}>
             {chartData.map((_, i) => (
               <Cell key={i} fill={colorArr[i % colorArr.length]} />
             ))}
@@ -742,7 +816,9 @@ const DashboardImpl = createBinderlessComponentImplementation(
     const cols = props.columns ?? 12
     const g = props.gap ?? 16
 
+    const cid = context.componentModel.id
     return (
+      <div data-a2ui-id={cid} style={{ display: 'contents' }}>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: g, width: '100%', overflow: 'hidden' }}>
         {ids.map(id => {
           const childModel = (context as any).surfaceComponents?.get(id)
@@ -753,6 +829,7 @@ const DashboardImpl = createBinderlessComponentImplementation(
             </div>
           )
         })}
+      </div>
       </div>
     )
   },

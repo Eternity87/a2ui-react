@@ -21,27 +21,31 @@
  */
 
 import { logger } from '@/lib/logger'
+import type {
+  LegacyMessage, V09Message, InputFormat,
+  PageDef, NormalizedPages, A2UIMessage, ComponentNode,
+} from '@/types/a2ui-types'
+
+export type { PageDef, NormalizedPages } from '@/types/a2ui-types'
 
 // ---- 类型定义 ----
 
-/** Agent 生成的简化格式消息 */
-interface LegacyMessage {
+/** Agent 生成的简化格式消息（内部使用，宽松 any 便于格式转换） */
+interface LegacyMessageInternal {
   beginRendering?: { surfaceId: string; catalogId: string }
   surfaceUpdate?: { surfaceId: string; components: any[] }
   dataModelUpdate?: { surfaceId: string; data: Record<string, any> }
   updateDataModel?: { surfaceId: string; path?: string; value?: any }
 }
 
-/** Google 官方 v0.9 标准消息 */
-interface V09Message {
+/** Google 官方 v0.9 标准消息（内部使用） */
+interface V09MessageInternal {
   version: 'v0.9'
   createSurface?: { surfaceId: string; catalogId: string; sendDataModel?: boolean }
   updateComponents?: { surfaceId: string; components: any[] }
   updateDataModel?: { surfaceId: string; path?: string; value?: any }
   deleteSurface?: { surfaceId: string }
 }
-
-type InputFormat = 'legacy' | 'v09' | 'v08'
 
 // ---- 格式检测 ----
 
@@ -53,7 +57,7 @@ type InputFormat = 'legacy' | 'v09' | 'v08'
  * - createSurface/updateComponents  → Google 官方 v0.9
  * - 其他                            → 假定为 v0.8（透传）
  */
-export function detectFormat(messages: any[]): InputFormat {
+export function detectFormat(messages: A2UIMessage[]): InputFormat {
   if (!Array.isArray(messages) || messages.length === 0) return 'v09'
   const first = messages[0]
   if ('beginRendering' in first || 'surfaceUpdate' in first || 'dataModelUpdate' in first) {
@@ -67,14 +71,14 @@ export function detectFormat(messages: any[]): InputFormat {
 
 /** 统一入口：任何格式的 A2UI 消息 → v0.9 标准消息数组 */
 export function toV09(
-  messages: any[],
+  messages: A2UIMessage[],
   options?: { sendDataModel?: boolean; catalogId?: string },
 ): V09Message[] {
   const format = detectFormat(messages)
   switch (format) {
-    case 'legacy': return legacyToV09(messages as LegacyMessage[], options)
-    case 'v09':   return messages as V09Message[]
-    case 'v08':   return v08ToV09(messages)
+    case 'legacy': return legacyToV09(messages as unknown as LegacyMessageInternal[], options) as unknown as V09Message[]
+    case 'v09':   return messages as unknown as V09Message[]
+    case 'v08':   return v08ToV09(messages) as unknown as V09Message[]
   }
 }
 
@@ -89,10 +93,10 @@ export function toV09(
  * 3. dataModelUpdate  → updateDataModel(path="/") (数据模型整体写入)
  */
 export function legacyToV09(
-  legacyMessages: LegacyMessage[],
+  legacyMessages: LegacyMessageInternal[],
   options?: { sendDataModel?: boolean; catalogId?: string },
-): V09Message[] {
-  const result: V09Message[] = []
+): V09MessageInternal[] {
+  const result: V09MessageInternal[] = []
   const catalogId = options?.catalogId ?? 'basic'
 
   for (const msg of legacyMessages) {
@@ -377,7 +381,7 @@ function convertValueMap(contents: any[]): any {
  * 2. 有 root + 孤儿根节点 → 将孤儿挂到 root 的 children 下
  * 3. 全部在 root 树下 → 不动
  */
-export function ensureRootComponent(comps: any[]): any[] {
+export function ensureRootComponent(comps: ComponentNode[]): ComponentNode[] {
   const allIds = new Set(comps.map(c => c.id))
 
   // 收集所有被 children 引用的节点 ID
@@ -442,20 +446,20 @@ export function setAtPath(obj: Record<string, any>, path: string, value: any) {
 }
 
 /** 从 a2ui 消息数组中提取 dataModel（兼容旧 dataModelUpdate 和新 updateDataModel） */
-export function extractDataFromMessages(messages: any[]): Record<string, any> {
+export function extractDataFromMessages(messages: A2UIMessage[]): Record<string, any> {
   const data: Record<string, any> = {}
 
   // 新格式：逐字段 updateDataModel
   for (const msg of messages) {
-    if ('updateDataModel' in msg) {
-      const { path, value } = msg.updateDataModel
+    if ('updateDataModel' in msg && msg.updateDataModel) {
+      const { path, value } = msg.updateDataModel as { path?: string; value?: unknown }
       if (path && value !== undefined) setAtPath(data, path, value)
     }
   }
 
   // 旧格式：dataModelUpdate.data 整体写入
   if (Object.keys(data).length === 0) {
-    const dm = messages.find((m: any) => 'dataModelUpdate' in m)
+    const dm = messages.find((m): m is LegacyMessage => 'dataModelUpdate' in m)
     if (dm?.dataModelUpdate?.data) {
       Object.assign(data, dm.dataModelUpdate.data)
     }
@@ -479,7 +483,7 @@ export function dataModelToV09Messages(surfaceId: string, data: Record<string, a
  * 将 A2UI 消息数组中的所有 surfaceId 替换为目标 ID
  * Agent 生成的每页消息都使用 surfaceId: "main"，加载时需为每页分配唯一 surfaceId
  */
-export function rewriteSurfaceId(messages: any[], newId: string): any[] {
+export function rewriteSurfaceId(messages: A2UIMessage[], newId: string): A2UIMessage[] {
   return messages.map((msg: any) => {
     const updated: any = {}
     for (const [key, val] of Object.entries(msg)) {
@@ -493,26 +497,12 @@ export function rewriteSurfaceId(messages: any[], newId: string): any[] {
   })
 }
 
-/** 多页面 JSON 中单页的定义 */
-export interface PageDef {
-  a2ui: any[]
-  logic: { reactions: any[]; scripts?: Record<string, string> }
-  /** 内嵌子 surface 定义（供 Dialog 组件引用） */
-  children?: Record<string, PageDef>
-}
-
-/** 归一化后的多页面结构 */
-export interface NormalizedPages {
-  pages: Record<string, PageDef>
-  shared?: { dataModel?: Record<string, any>; logic?: { reactions: any[] } }
-}
-
 /**
  * 将任意输入格式归一化为 { pages, shared } 结构
  * - 有 pages key → 多页面格式
  * - 无 pages key → 视为单页面，自动包装为 { main: {...} }
  */
-export function normalizeToPages(input: any): NormalizedPages {
+export function normalizeToPages(input: Record<string, any>): NormalizedPages {
   if (input && typeof input === 'object' && 'pages' in input) {
     return { pages: input.pages, shared: input.shared }
   }
@@ -523,8 +513,14 @@ export function normalizeToPages(input: any): NormalizedPages {
 
 // ---- 反向提取（用于调试器/导出） ----
 
+/** SurfaceModel 的调试器访问子集 */
+interface SurfaceLike {
+  componentsModel?: { entries?: Iterable<[string, { id: string; type: string; properties: Record<string, unknown> }]> }
+  dataModel?: { get: (path: string) => Record<string, unknown> | undefined }
+}
+
 /** 将 v0.9 扁平格式还原为简化格式的组件列表 */
-export function toLegacyComponents(v09Components: any[]): any[] {
+export function toLegacyComponents(v09Components: ComponentNode[]): ComponentNode[] {
   return v09Components.map(c => {
     const { id, component, ...rest } = c
     return { id, component: component ?? c.type, props: rest }
@@ -532,7 +528,7 @@ export function toLegacyComponents(v09Components: any[]): any[] {
 }
 
 /** 从 SurfaceModel 提取组件列表（简化格式，调试器用） */
-export function extractComponents(surface: any): any[] {
+export function extractComponents(surface: SurfaceLike): ComponentNode[] {
   try {
     const comps: any[] = []
     if (surface?.componentsModel?.entries) {
@@ -551,7 +547,7 @@ export function extractComponents(surface: any): any[] {
 }
 
 /** 从 SurfaceModel 提取 dataModel 原始数据 */
-export function extractDataModel(surface: any): Record<string, any> {
+export function extractDataModel(surface: SurfaceLike): Record<string, unknown> {
   try {
     return surface?.dataModel?.get('/') ?? {}
   } catch {

@@ -36,6 +36,14 @@ export function unregisterChildPage(parentPageId: string, childName: string) {
   childPageRegistry.delete(`${parentPageId}/${childName}`)
 }
 
+/** 批量注销某页面的所有子页面（比逐条 unregisterChildPage 更健壮，异常中断也不残留） */
+export function unregisterAllChildPages(parentPageId: string) {
+  const prefix = `${parentPageId}/`
+  for (const key of childPageRegistry.keys()) {
+    if (key.startsWith(prefix)) childPageRegistry.delete(key)
+  }
+}
+
 /** 获取内嵌子页面定义（Dialog 组件打开时调用） */
 export function getChildPage(parentPageId: string, childName: string): PageDef | undefined {
   return childPageRegistry.get(`${parentPageId}/${childName}`)
@@ -117,12 +125,9 @@ export function PageProvider({ data, children }: PageProviderProps) {
     historyRef.current = [firstPage]
 
     return () => {
-      for (const [pageId, page] of Object.entries(data.pages)) {
-        if (page.children) {
-          for (const childName of Object.keys(page.children)) {
-            unregisterChildPage(pageId, childName)
-          }
-        }
+      // 批量清理注册的子页面。使用 unregisterAllChildPages 确保异常中断也不残留。
+      for (const pageId of Object.keys(data.pages)) {
+        unregisterAllChildPages(pageId)
       }
     }
   }, [data, homePageId, a2ui, sharedStore])

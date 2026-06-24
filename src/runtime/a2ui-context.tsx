@@ -202,12 +202,17 @@ export function A2UIProvider({ catalog, children }: A2UIProviderProps) {
     }
   }, [processor])
 
+  // ref 读取最新值，保持 callback 身份稳定（避免 currentSurfaceId 变化导致订阅方 effect 重建）
+  const currentSurfaceIdRef = useRef(currentSurfaceId)
+  currentSurfaceIdRef.current = currentSurfaceId
+
   const onAction = useCallback((handler: (action: any) => void) => {
-    const s = surfacesRef.current.get(currentSurfaceId)
+    const sid = currentSurfaceIdRef.current
+    const s = surfacesRef.current.get(sid)
     if (!s) return () => {}
     const sub = s.onAction.subscribe(handler)
     return () => sub.unsubscribe()
-  }, [currentSurfaceId])
+  }, [])
 
   const value = useMemo<A2UIContextValue>(() => ({
     processor,

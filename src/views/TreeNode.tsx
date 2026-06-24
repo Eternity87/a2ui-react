@@ -28,9 +28,9 @@ interface TreeNodeProps {
   onDragLeave: () => void
   onDrop: (e: DragEvent, id: string) => void
   onDragEnd: () => void
-  onColumnDragStart?: (e: DragEvent, tableId: string, colIndex: number) => void
-  onColumnDragOver?: (e: DragEvent, virtualId: string) => void
-  onColumnDrop?: (e: DragEvent, virtualId: string) => void
+  onColumnDragStart?: ((e: DragEvent, tableId: string, colIndex: number) => void) | undefined
+  onColumnDragOver?: ((e: DragEvent, virtualId: string) => void) | undefined
+  onColumnDrop?: ((e: DragEvent, virtualId: string) => void) | undefined
 }
 
 export function TreeNode({

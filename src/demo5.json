@@ -275,7 +275,14 @@
         "id": "onRadarClick",
         "when": { "field": "radarChart", "event": "click" },
         "then": [
-          { "type": "toast", "message": "产品综合评分雷达图已点击", "variant": "info" }
+          {
+            "type": "setValues",
+            "map": {
+              "/drillMonth": { "pipe": [{ "get": "/_event.metric" }] },
+              "/drillSales": { "pipe": [{ "get": "/_event.score" }] }
+            }
+          },
+          { "type": "toast", "message": "${/_event.metric}: 综合评分 ${/_event.score}", "variant": "info" }
         ]
       },
       {

@@ -42,6 +42,10 @@ const SANDBOX_GLOBALS: Record<string, any> = {
   undefined,
   isArray: Array.isArray,
   NaN, Infinity,
+  // 调试工具
+  console,
+  setTimeout,
+  clearTimeout,
 }
 
 /**
@@ -77,7 +81,8 @@ export function safeEvalScript(code: string, vars: Record<string, any> = {}): vo
   const keys = Object.keys(allVars)
   const values = Object.values(allVars)
 
-  const fn = new Function(...keys, `"use strict";\n${code}`)
+  // async IIFE 包裹，支持用户代码中的 await（如 await apiRequest(...)）
+  const fn = new Function(...keys, `"use strict";\nreturn (async () => {\n${code}\n})()`)
   fn(...values)
 }
 
@@ -117,14 +122,6 @@ export function canHaveChildren(typeOrComp: any): boolean {
 /** 从 DataModel 取值（内部使用） */
 function getByPointer(dm: DataModel, pointer: string): any {
   return dm.get(dmPath(pointer))
-}
-
-/** 解析单个值：如果是 { path } DataBinding 则查 dataModel，否则原样返回 */
-function resolveDynamicValue(value: any, dm: DataModel): any {
-  if (typeof value === 'object' && value !== null && 'path' in value) {
-    return getByPointer(dm, value.path)
-  }
-  return value
 }
 
 /**

@@ -7,6 +7,7 @@
 
 import { buildSystemPrompt, buildFullPrompt } from './prompt-builder'
 import { logger } from '@/lib/logger'
+import type { A2UIMessage, ReactionDef } from '@/types/a2ui-types'
 import demoOutput from '../demo.json'
 
 export interface AgentConfig {
@@ -17,8 +18,8 @@ export interface AgentConfig {
 }
 
 export interface AgentResult {
-  a2ui: any[]
-  logic: { reactions: any[] }
+  a2ui: A2UIMessage[]
+  logic: { reactions: ReactionDef[] }
 }
 
 // ===== Gemini API =====
@@ -99,7 +100,7 @@ async function callDeepSeek(
 
 // ===== 提取 JSON =====
 
-function extractJson(raw: string): any {
+function extractJson(raw: string): unknown {
   let text = raw.trim()
   // 去掉 markdown 代码块包裹
   if (text.startsWith('```')) {
@@ -157,7 +158,10 @@ function repairJson(text: string): string | null {
 
 // ===== 校验输出 =====
 
-function validateOutput(data: any): AgentResult {
+/** JSON 解析后的原始对象（宽松类型，仅在边界使用） */
+type JsonData = Record<string, any>
+
+function validateOutput(data: JsonData): AgentResult {
   if (!data || typeof data !== 'object') {
     throw new Error('Agent 输出不是有效的 JSON 对象')
   }
@@ -184,7 +188,7 @@ function validateOutput(data: any): AgentResult {
         firstPage.a2ui.push({ updateDataModel: { surfaceId: 'main', path: `/${key}`, value } })
       }
     }
-    return { a2ui: firstPage.a2ui, logic: firstPage.logic }
+    return { a2ui: firstPage.a2ui as A2UIMessage[], logic: firstPage.logic as { reactions: ReactionDef[] } }
   }
 
   // 单页面格式
@@ -201,12 +205,12 @@ function validateOutput(data: any): AgentResult {
     data.a2ui = [{ beginRendering: { surfaceId: 'main', catalogId: 'basic' } }, ...data.a2ui]
   }
 
-  return { a2ui: data.a2ui, logic: data.logic }
+  return { a2ui: data.a2ui as A2UIMessage[], logic: data.logic as { reactions: ReactionDef[] } }
 }
 
 // ===== 保存到 test.json（非 mock 模式） =====
 
-async function saveToTestJson(data: any) {
+async function saveToTestJson(data: unknown) {
   try {
     await fetch('/api/save-test-json', {
       method: 'POST',
@@ -226,7 +230,7 @@ export async function generatePage(
   // Mock 模式：直接返回 demo 数据
   if (config.provider === 'mock') {
     await new Promise(r => setTimeout(r, 500)) // 模拟延迟
-    return { a2ui: demoOutput.a2ui, logic: demoOutput.logic }
+    return { a2ui: demoOutput.a2ui as A2UIMessage[], logic: demoOutput.logic as { reactions: ReactionDef[] } }
   }
 
   const systemPrompt = buildSystemPrompt(userRequirement, { exampleType })
@@ -246,7 +250,7 @@ export async function generatePage(
 
   const parsed = extractJson(raw)
   saveToTestJson(parsed)
-  return validateOutput(parsed)
+  return validateOutput(parsed as JsonData)
 }
 
 /**
@@ -278,5 +282,5 @@ export async function generatePageWithExample(
 
   const parsed = extractJson(raw)
   saveToTestJson(parsed)
-  return validateOutput(parsed)
+  return validateOutput(parsed as JsonData)
 }

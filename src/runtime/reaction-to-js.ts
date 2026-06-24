@@ -5,21 +5,7 @@
  * 生成的代码可直接在 ScriptEngine 中执行，用户也可自由编辑。
  */
 
-interface Action {
-  type: string
-  [key: string]: any
-}
-
-interface ConditionAction extends Action {
-  type: 'condition'
-  branches: { if?: string; then: Action[] }[]
-}
-
-interface Reaction {
-  id: string
-  when: { field: string; event: string }
-  then: Action[]
-}
+import type { Action, ReactionDef, ConditionAction } from '@/types/a2ui-types'
 
 const INDENT = '  '
 
@@ -28,6 +14,7 @@ const API_HEADER = [
   '// 可用全局变量:',
   '//   dataModel    — DataModel 实例 (get/set/subscribe)',
   '//   pipe         — pipe(steps) 执行管道计算',
+  '//   apiRequest   — await apiRequest({ url, method?, params?, body? }) 调用 API',
   '//   toast        — toast(message, variant) 弹出提示',
   '//   sharedStore  — 跨页面共享状态 (getState/setState)',
   '//   navigate     — navigate(pageId, params) 页面跳转',
@@ -36,7 +23,7 @@ const API_HEADER = [
 ]
 
 /** 将单个 Reaction 转换为可执行 JS 代码（body-only） */
-export function reactionToJS(reaction: Reaction): string {
+export function reactionToJS(reaction: ReactionDef): string {
   const lines: string[] = []
   const triggerLabel = reaction.when.event === 'click'
     ? `// 触发: 组件 ${reaction.when.field} 被点击`
@@ -83,12 +70,20 @@ function actionToJS(action: Action, depth: number): string[] {
     }
     case 'validate': {
       const target = action.errorTarget ?? '/errors'
-      const rules = action.rules?.map((r: any) =>
-        `${pad}// ${r.field}: ${r.required ? '必填' : ''} ${r.message}`
-      ) ?? []
+      const pad1 = INDENT.repeat(depth + 1)
+      const rules = action.rules ?? []
+      if (rules.length === 0) return [`${pad}// validate: no rules`]
       return [
-        `${pad}// validate → ${target}`,
-        ...rules,
+        `${pad}const errors = {}`,
+        ...rules.map(r =>
+          r.required
+            ? `${pad}if (!dataModel.get(${fmtJson(r.field)})) errors[${fmtJson(r.field)}] = ${fmtJson(r.message)}`
+            : `${pad}// ${r.field}: ${r.message}`
+        ),
+        `${pad}if (Object.keys(errors).length > 0) {`,
+        `${pad1}dataModel.set(${fmtJson(target)}, errors)`,
+        `${pad1}throw new Error('validation_failed')`,
+        `${pad}}`,
       ]
     }
     case 'cascade':
@@ -106,7 +101,7 @@ function actionToJS(action: Action, depth: number): string[] {
 
 // ===== setValues =====
 
-function setValuesToJS(action: Action, depth: number): string[] {
+function setValuesToJS(action: Extract<Action, { type: 'setValues' }>, depth: number): string[] {
   const pad = INDENT.repeat(depth)
   const lines: string[] = [`${pad}// setValues`]
   const map = action.map as Record<string, any> ?? {}
