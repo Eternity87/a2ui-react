@@ -5,7 +5,7 @@
  * warn/info/debug 在生产构建中不输出，减少噪音。
  */
 
-const isDev = import.meta.env.DEV
+const isDev = process.env.NODE_ENV !== 'production'
 
 export const logger = {
   warn: (...args: any[]) => { if (isDev) console.warn(...args) },

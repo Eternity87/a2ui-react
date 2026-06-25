@@ -1,5 +1,7 @@
+'use client'
+
 /**
- * App.tsx — 应用入口
+ * A2UIApp.tsx — 应用入口 (Client Component)
  *
  * 【两种模式】均使用官方 @a2ui 渲染管线
  * - 页面调试器 (debugger): 三栏布局，编辑组件树 → syncToSurface → A2uiSurface 渲染
@@ -32,11 +34,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-
-const defaultKeys: Record<string, string> = {
-  gemini: import.meta.env.VITE_GEMINI_API_KEY ?? '',
-  deepseek: import.meta.env.VITE_DEEPSEEK_API_KEY ?? '',
-}
 
 export default function App() {
   const [mode, setMode] = useState<'debugger' | 'preview'>('debugger')
@@ -97,7 +94,6 @@ function PreviewInner() {
 
   // Agent state
   const [provider, setProvider] = useState<AgentConfig['provider']>('mock')
-  const [apiKey, setApiKey] = useState('')
   const [requirement, setRequirement] = useState('')
   const [useFullPrompt, setUseFullPrompt] = useState(false)
   const [exampleType, setExampleType] = useState<'form' | 'dashboard'>('dashboard')
@@ -130,10 +126,7 @@ function PreviewInner() {
     setGenError('')
 
     try {
-      const config: AgentConfig = {
-        provider,
-        apiKey: provider !== 'mock' ? apiKey || undefined : undefined,
-      }
+      const config: AgentConfig = { provider }
       const result = useFullPrompt
         ? await generatePageWithExample(requirement, config, exampleType)
         : await generatePage(requirement, config, exampleType)
@@ -178,7 +171,7 @@ function PreviewInner() {
           <div className="p-3 space-y-3 overflow-y-auto flex-1">
             <div>
               <label className="text-xs text-gray-500">提供商</label>
-              <Select value={provider} onValueChange={v => { setProvider(v as AgentConfig['provider']); setApiKey(defaultKeys[v] ?? '') }}>
+              <Select value={provider} onValueChange={v => { setProvider(v as AgentConfig['provider']) }}>
                 <SelectTrigger className="h-8 text-xs mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="mock">Mock (无需 Key)</SelectItem>
@@ -187,14 +180,6 @@ function PreviewInner() {
                 </SelectContent>
               </Select>
             </div>
-
-            {provider !== 'mock' && (
-              <div>
-                <label className="text-xs text-gray-500">API Key</label>
-                <Input type="password" className="h-8 text-xs mt-1" value={apiKey}
-                  onChange={e => setApiKey(e.target.value)} placeholder={`输入 ${provider} API Key`} />
-              </div>
-            )}
 
             <div className="flex items-center gap-2 flex-wrap">
               <label className="text-xs text-gray-500">示例类型</label>

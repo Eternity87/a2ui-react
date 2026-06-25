@@ -19,35 +19,10 @@ import React, {
 } from 'react'
 import { useA2UI } from './a2ui-context'
 import { logger } from '@/lib/logger'
-import { normalizeToPages, rewriteSurfaceId, type NormalizedPages, type PageDef } from './a2ui-adapter'
+import { normalizeToPages, rewriteSurfaceId, type NormalizedPages } from './a2ui-adapter'
 import { useSharedStore } from './shared-store'
-
-// ===== 子页面注册表（供 Dialog 组件查找本地 children 定义） =====
-
-const childPageRegistry = new Map<string, PageDef>()
-
-/** 注册内嵌子页面定义（页面加载时调用） */
-export function registerChildPage(parentPageId: string, childName: string, def: PageDef) {
-  childPageRegistry.set(`${parentPageId}/${childName}`, def)
-}
-
-/** 注销内嵌子页面定义（页面卸载时调用） */
-export function unregisterChildPage(parentPageId: string, childName: string) {
-  childPageRegistry.delete(`${parentPageId}/${childName}`)
-}
-
-/** 批量注销某页面的所有子页面（比逐条 unregisterChildPage 更健壮，异常中断也不残留） */
-export function unregisterAllChildPages(parentPageId: string) {
-  const prefix = `${parentPageId}/`
-  for (const key of childPageRegistry.keys()) {
-    if (key.startsWith(prefix)) childPageRegistry.delete(key)
-  }
-}
-
-/** 获取内嵌子页面定义（Dialog 组件打开时调用） */
-export function getChildPage(parentPageId: string, childName: string): PageDef | undefined {
-  return childPageRegistry.get(`${parentPageId}/${childName}`)
-}
+import { registerChildPage, unregisterAllChildPages } from './page-state'
+export { registerChildPage, unregisterChildPage, unregisterAllChildPages, getChildPage } from './page-state'
 
 // ===== 类型 =====
 

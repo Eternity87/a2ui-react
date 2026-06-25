@@ -53,7 +53,10 @@ export const useSharedStore = create<SharedState>()(
     }),
     {
       name: 'a2ui-shared',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => {
+        if (typeof window === 'undefined') return undefined as any
+        return localStorage
+      }),
       partialize: (state) => ({
         userInfo: state.userInfo,
         token: state.token,
